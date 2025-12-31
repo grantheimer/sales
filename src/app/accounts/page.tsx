@@ -1,15 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, HealthSystem } from '@/lib/supabase';
+import { supabase, HealthSystem, Contact } from '@/lib/supabase';
 import Link from 'next/link';
+
+type HealthSystemWithCount = HealthSystem & {
+  contact_count: number;
+};
 
 type FormData = {
   name: string;
-  contact_name: string;
-  contact_role: string;
-  contact_email: string;
-  contact_phone: string;
   deal_stage: string;
   revenue_potential: string;
   notes: string;
@@ -17,10 +17,6 @@ type FormData = {
 
 const emptyForm: FormData = {
   name: '',
-  contact_name: '',
-  contact_role: '',
-  contact_email: '',
-  contact_phone: '',
   deal_stage: 'prospecting',
   revenue_potential: '',
   notes: '',
@@ -37,7 +33,7 @@ const dealStages = [
 ];
 
 export default function AccountsPage() {
-  const [healthSystems, setHealthSystems] = useState<HealthSystem[]>([]);
+  const [healthSystems, setHealthSystems] = useState<HealthSystemWithCount[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -45,16 +41,33 @@ export default function AccountsPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchHealthSystems = async () => {
-    const { data, error } = await supabase
+    const { data: systems, error } = await supabase
       .from('health_systems')
       .select('*')
       .order('name');
 
     if (error) {
       console.error('Error fetching health systems:', error);
-    } else {
-      setHealthSystems(data || []);
+      setLoading(false);
+      return;
     }
+
+    // Get contact counts for each system
+    const { data: contacts } = await supabase
+      .from('contacts')
+      .select('health_system_id');
+
+    const contactCounts: Record<string, number> = {};
+    (contacts || []).forEach((c: { health_system_id: string }) => {
+      contactCounts[c.health_system_id] = (contactCounts[c.health_system_id] || 0) + 1;
+    });
+
+    const systemsWithCounts = (systems || []).map((system) => ({
+      ...system,
+      contact_count: contactCounts[system.id] || 0,
+    }));
+
+    setHealthSystems(systemsWithCounts);
     setLoading(false);
   };
 
@@ -98,10 +111,6 @@ export default function AccountsPage() {
   const handleEdit = (system: HealthSystem) => {
     setFormData({
       name: system.name,
-      contact_name: system.contact_name || '',
-      contact_role: system.contact_role || '',
-      contact_email: system.contact_email || '',
-      contact_phone: system.contact_phone || '',
       deal_stage: system.deal_stage || 'prospecting',
       revenue_potential: system.revenue_potential || '',
       notes: system.notes || '',
@@ -111,7 +120,7 @@ export default function AccountsPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete "${name}"? This will also delete all outreach history.`)) {
+    if (!confirm(`Are you sure you want to delete "${name}"? This will also delete all contacts and outreach history.`)) {
       return;
     }
 
@@ -142,13 +151,19 @@ export default function AccountsPage() {
   return (
     <div className="min-h-screen p-8 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Manage Accounts</h1>
+        <h1 className="text-3xl font-bold">Accounts</h1>
         <div className="flex gap-2">
           <Link
             href="/"
             className="px-4 py-2 border rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition"
           >
-            Back to Dashboard
+            Dashboard
+          </Link>
+          <Link
+            href="/contacts"
+            className="px-4 py-2 border rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition"
+          >
+            All Contacts
           </Link>
           {!showForm && (
             <button
@@ -179,50 +194,6 @@ export default function AccountsPage() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                 placeholder="e.g., Mayo Clinic"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Contact Name</label>
-              <input
-                type="text"
-                value={formData.contact_name}
-                onChange={(e) => setFormData({ ...formData, contact_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                placeholder="e.g., John Smith"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Contact Role</label>
-              <input
-                type="text"
-                value={formData.contact_role}
-                onChange={(e) => setFormData({ ...formData, contact_role: e.target.value })}
-                className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                placeholder="e.g., VP of Operations"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Contact Email</label>
-              <input
-                type="email"
-                value={formData.contact_email}
-                onChange={(e) => setFormData({ ...formData, contact_email: e.target.value })}
-                className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                placeholder="e.g., john@mayoclinic.org"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Contact Phone</label>
-              <input
-                type="tel"
-                value={formData.contact_phone}
-                onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
-                className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                placeholder="e.g., (555) 123-4567"
               />
             </div>
 
@@ -302,31 +273,39 @@ export default function AccountsPage() {
           {healthSystems.map((system) => (
             <div
               key={system.id}
-              className="border rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm flex justify-between items-start"
+              className="border rounded-lg p-4 bg-white dark:bg-gray-800 shadow-sm"
             >
-              <div>
-                <h3 className="text-lg font-semibold">{system.name}</h3>
-                {system.contact_name && (
-                  <p className="text-gray-600 dark:text-gray-400">
-                    {system.contact_name}
-                    {system.contact_role && ` - ${system.contact_role}`}
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-lg font-semibold">{system.name}</h3>
+                  <p className="text-sm text-gray-500">
+                    <span className="capitalize">{system.deal_stage}</span>
+                    {system.revenue_potential && ` · ${system.revenue_potential}`}
                   </p>
-                )}
-                <p className="text-sm text-gray-500 capitalize">{system.deal_stage}</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(system)}
-                  className="px-3 py-1 text-sm border rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(system.id, system.name)}
-                  className="px-3 py-1 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition"
-                >
-                  Delete
-                </button>
+                  <p className="text-sm text-gray-500">
+                    {system.contact_count} contact{system.contact_count !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Link
+                    href={`/accounts/${system.id}`}
+                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                  >
+                    View Contacts
+                  </Link>
+                  <button
+                    onClick={() => handleEdit(system)}
+                    className="px-3 py-1 text-sm border rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(system.id, system.name)}
+                    className="px-3 py-1 text-sm border border-red-300 text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))}
