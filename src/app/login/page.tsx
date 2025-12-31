@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Logo from '@/components/Logo';
 
 export default function LoginPage() {
   const [password, setPassword] = useState('');
@@ -32,7 +33,9 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-center mb-8">Sales Outreach Tracker</h1>
+        <div className="flex justify-center mb-8">
+          <Logo className="h-10 w-auto" />
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -41,7 +44,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+              className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
               placeholder="Enter password"
               autoFocus
             />
@@ -54,7 +57,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50"
+            className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
           >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>

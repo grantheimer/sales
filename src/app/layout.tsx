@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sales Outreach Tracker",
-  description: "Track health system outreach",
+  title: "ArubaCRM",
+  description: "Sales outreach tracking for health systems",
 };
 
 export default function RootLayout({
