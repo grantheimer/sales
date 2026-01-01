@@ -1,19 +1,19 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, Opportunity, HealthSystem, Contact, OutreachLog } from '@/lib/supabase';
+import { supabase, Opportunity, HealthSystem, Contact, OutreachLog, OpportunityStatus } from '@/lib/supabase';
 import Link from 'next/link';
 
 type OpportunityWithDetails = Opportunity & {
   health_system: HealthSystem;
   contact_count: number;
-  has_email_this_week: boolean;
-  last_email_date: string | null;
+  last_outreach_date: string | null;
 };
 
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<OpportunityWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<OpportunityStatus | 'all'>('all');
 
   const fetchData = async () => {
     // Get opportunities with health systems
@@ -32,12 +32,6 @@ export default function OpportunitiesPage() {
       .select('*')
       .order('contact_date', { ascending: false });
 
-    // Calculate start of week
-    const today = new Date();
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-
     // Build contact to opportunity map
     const contactToOpp: Record<string, string> = {};
     const contactCountByOpp: Record<string, number> = {};
@@ -49,23 +43,13 @@ export default function OpportunitiesPage() {
       }
     });
 
-    // Find opportunities with email this week and last email date
-    const oppsWithEmailThisWeek = new Set<string>();
-    const lastEmailByOpp: Record<string, string> = {};
+    // Find last outreach date per opportunity
+    const lastOutreachByOpp: Record<string, string> = {};
 
     (logsData || []).forEach((log: OutreachLog) => {
-      if (log.contact_method === 'email') {
-        const oppId = contactToOpp[log.contact_id];
-        if (oppId) {
-          // Check if this week
-          if (new Date(log.contact_date) >= startOfWeek) {
-            oppsWithEmailThisWeek.add(oppId);
-          }
-          // Track last email date
-          if (!lastEmailByOpp[oppId]) {
-            lastEmailByOpp[oppId] = log.contact_date;
-          }
-        }
+      const oppId = contactToOpp[log.contact_id];
+      if (oppId && !lastOutreachByOpp[oppId]) {
+        lastOutreachByOpp[oppId] = log.contact_date;
       }
     });
 
@@ -75,13 +59,15 @@ export default function OpportunitiesPage() {
         ...opp,
         health_system: opp.health_systems,
         contact_count: contactCountByOpp[opp.id] || 0,
-        has_email_this_week: oppsWithEmailThisWeek.has(opp.id),
-        last_email_date: lastEmailByOpp[opp.id] || null,
+        last_outreach_date: lastOutreachByOpp[opp.id] || null,
       })
     );
 
-    // Sort by account name, then product
+    // Sort by status (prospect first), then by account name, then product
     enrichedOpps.sort((a, b) => {
+      const statusOrder = { prospect: 0, active: 1, won: 2 };
+      const statusCompare = (statusOrder[a.status] || 0) - (statusOrder[b.status] || 0);
+      if (statusCompare !== 0) return statusCompare;
       const accountCompare = a.health_system.name.localeCompare(b.health_system.name);
       if (accountCompare !== 0) return accountCompare;
       return a.product.localeCompare(b.product);
@@ -103,9 +89,14 @@ export default function OpportunitiesPage() {
     );
   }
 
+  // Filter opportunities by status
+  const filteredOpportunities = statusFilter === 'all'
+    ? opportunities
+    : opportunities.filter(o => o.status === statusFilter);
+
   // Group by account
   const oppsByAccount: Record<string, OpportunityWithDetails[]> = {};
-  opportunities.forEach((opp) => {
+  filteredOpportunities.forEach((opp) => {
     const accountId = opp.health_system_id;
     if (!oppsByAccount[accountId]) {
       oppsByAccount[accountId] = [];
@@ -119,39 +110,84 @@ export default function OpportunitiesPage() {
     return nameA.localeCompare(nameB);
   });
 
-  const coveredThisWeek = opportunities.filter((o) => o.has_email_this_week).length;
-  const needingEmail = opportunities.length - coveredThisWeek;
+  // Count by status
+  const prospectCount = opportunities.filter(o => o.status === 'prospect').length;
+  const activeCount = opportunities.filter(o => o.status === 'active').length;
+  const wonCount = opportunities.filter(o => o.status === 'won').length;
+
+  const getStatusBadge = (status: OpportunityStatus) => {
+    switch (status) {
+      case 'prospect':
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300';
+      case 'active':
+        return 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300';
+      case 'won':
+        return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
+      default:
+        return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+    }
+  };
 
   return (
     <div className="min-h-screen p-6 max-w-4xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-2xl font-bold">Opportunities</h1>
           <p className="text-gray-500 text-sm">
-            {opportunities.length} opportunit{opportunities.length !== 1 ? 'ies' : 'y'} across {accountIds.length} account{accountIds.length !== 1 ? 's' : ''}
+            {opportunities.length} opportunit{opportunities.length !== 1 ? 'ies' : 'y'} total
           </p>
         </div>
-        <div className="text-right">
-          <p className={`text-2xl font-bold ${needingEmail === 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {needingEmail}
-          </p>
-          <p className="text-xs text-gray-500">need email this week</p>
+        <div className="flex gap-2 text-sm">
+          <span className="px-2 py-1 rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300">
+            {prospectCount} Prospect
+          </span>
+          <span className="px-2 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">
+            {activeCount} Active
+          </span>
+          <span className="px-2 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
+            {wonCount} Won
+          </span>
         </div>
       </div>
 
-      {opportunities.length === 0 ? (
+      {/* Status Filter */}
+      <div className="mb-4 flex items-center gap-2">
+        <span className="text-sm text-gray-500">Filter:</span>
+        <div className="flex gap-1">
+          {(['all', 'prospect', 'active', 'won'] as const).map((status) => (
+            <button
+              key={status}
+              onClick={() => setStatusFilter(status)}
+              className={`px-3 py-1 text-sm rounded-lg transition ${
+                statusFilter === status
+                  ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'
+              }`}
+            >
+              {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filteredOpportunities.length === 0 ? (
         <div className="text-center py-16 bg-gray-50 dark:bg-gray-800 rounded-xl">
-          <p className="text-gray-500 mb-2">No opportunities yet</p>
-          <Link href="/accounts" className="text-blue-600 hover:underline text-sm">
-            Go to Accounts to add solutions
-          </Link>
+          <p className="text-gray-500 mb-2">
+            {opportunities.length === 0 
+              ? 'No opportunities yet' 
+              : `No ${statusFilter} opportunities`}
+          </p>
+          {opportunities.length === 0 && (
+            <Link href="/accounts" className="text-blue-600 hover:underline text-sm">
+              Go to Accounts to add solutions
+            </Link>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
           {accountIds.map((accountId) => {
             const accountOpps = oppsByAccount[accountId];
             const accountName = accountOpps[0]?.health_system?.name || 'Unknown';
-            const accountCovered = accountOpps.filter((o) => o.has_email_this_week).length;
 
             return (
               <div key={accountId}>
@@ -162,11 +198,6 @@ export default function OpportunitiesPage() {
                       ({accountOpps.length} opportunit{accountOpps.length !== 1 ? 'ies' : 'y'})
                     </span>
                   </div>
-                  <span className={`text-sm font-medium ${
-                    accountCovered === accountOpps.length ? 'text-green-600' : 'text-gray-500'
-                  }`}>
-                    {accountCovered}/{accountOpps.length} covered
-                  </span>
                 </div>
 
                 <div className="space-y-2">
@@ -177,21 +208,21 @@ export default function OpportunitiesPage() {
                     >
                       <div className="flex justify-between items-center">
                         <div className="flex items-center gap-3">
-                          <span className={`w-3 h-3 rounded-full ${
-                            opp.has_email_this_week ? 'bg-green-500' : 'bg-red-400'
-                          }`} />
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-medium">
                                 {opp.product}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusBadge(opp.status)}`}>
+                                {opp.status.charAt(0).toUpperCase() + opp.status.slice(1)}
                               </span>
                               <span className="text-sm text-gray-500">
                                 {opp.contact_count} contact{opp.contact_count !== 1 ? 's' : ''}
                               </span>
                             </div>
-                            {opp.last_email_date && (
+                            {opp.last_outreach_date && (
                               <p className="text-xs text-gray-400 mt-0.5">
-                                Last email: {new Date(opp.last_email_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                Last outreach: {new Date(opp.last_outreach_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                               </p>
                             )}
                           </div>

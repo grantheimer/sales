@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { supabase, HealthSystem, Opportunity, Contact, OutreachLog } from '@/lib/supabase';
+import { supabase, HealthSystem, Opportunity, Contact, OutreachLog, OPPORTUNITY_STATUSES, OpportunityStatus } from '@/lib/supabase';
 import Link from 'next/link';
 
 type ContactFormData = {
@@ -11,6 +11,7 @@ type ContactFormData = {
   email: string;
   phone: string;
   notes: string;
+  cadence_days: number;
 };
 
 const emptyContactForm: ContactFormData = {
@@ -19,6 +20,7 @@ const emptyContactForm: ContactFormData = {
   email: '',
   phone: '',
   notes: '',
+  cadence_days: 10,
 };
 
 type ContactWithOutreach = Contact & {
@@ -41,6 +43,7 @@ export default function OpportunityDetailPage() {
   const [saving, setSaving] = useState(false);
   const [loggingId, setLoggingId] = useState<string | null>(null);
   const [logNotes, setLogNotes] = useState<Record<string, string>>({});
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const fetchData = async () => {
     const { data: oppData, error: oppError } = await supabase
@@ -123,6 +126,7 @@ export default function OpportunityDetailPage() {
           email: formData.email || null,
           phone: formData.phone || null,
           notes: formData.notes || null,
+          cadence_days: formData.cadence_days,
           updated_at: new Date().toISOString(),
         })
         .eq('id', editingId);
@@ -138,6 +142,7 @@ export default function OpportunityDetailPage() {
         email: formData.email || null,
         phone: formData.phone || null,
         notes: formData.notes || null,
+        cadence_days: formData.cadence_days,
         opportunity_id: opportunityId,
         health_system_id: opportunity?.health_system_id,
       });
@@ -162,6 +167,7 @@ export default function OpportunityDetailPage() {
       email: contact.email || '',
       phone: contact.phone || '',
       notes: contact.notes || '',
+      cadence_days: contact.cadence_days || 10,
     });
     setEditingId(contact.id);
     setShowForm(true);
@@ -208,6 +214,27 @@ export default function OpportunityDetailPage() {
     setLoggingId(null);
   };
 
+  const handleStatusChange = async (newStatus: OpportunityStatus) => {
+    if (!opportunity) return;
+    setUpdatingStatus(true);
+
+    const { error } = await supabase
+      .from('opportunities')
+      .update({
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', opportunity.id);
+
+    if (error) {
+      console.error('Error updating status:', error);
+      alert('Failed to update status');
+    } else {
+      setOpportunity({ ...opportunity, status: newStatus });
+    }
+    setUpdatingStatus(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -235,15 +262,44 @@ export default function OpportunityDetailPage() {
         <Link href={`/accounts/${account.id}`} className="text-blue-600 hover:underline text-sm">
           &larr; Back to {account.name}
         </Link>
-        <div className="flex items-center gap-2 mt-1">
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
           <h1 className="text-2xl font-bold">{account.name}</h1>
           <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-medium">
             {opportunity.product}
           </span>
         </div>
-        <p className="text-gray-500 text-sm">
-          {contacts.length} contact{contacts.length !== 1 ? 's' : ''} for this opportunity
-        </p>
+        <div className="flex items-center gap-3 mt-2">
+          <p className="text-gray-500 text-sm">
+            {contacts.length} contact{contacts.length !== 1 ? 's' : ''} for this opportunity
+          </p>
+          <span className="text-gray-300 dark:text-gray-600">|</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Status:</span>
+            <select
+              value={opportunity.status || 'prospect'}
+              onChange={(e) => handleStatusChange(e.target.value as OpportunityStatus)}
+              disabled={updatingStatus}
+              className={`text-sm px-2 py-1 rounded-lg border transition ${
+                opportunity.status === 'prospect'
+                  ? 'bg-yellow-50 border-yellow-300 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-700 dark:text-yellow-300'
+                  : opportunity.status === 'active'
+                  ? 'bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-900/30 dark:border-blue-700 dark:text-blue-300'
+                  : 'bg-green-50 border-green-300 text-green-800 dark:bg-green-900/30 dark:border-green-700 dark:text-green-300'
+              } ${updatingStatus ? 'opacity-50' : ''}`}
+            >
+              {OPPORTUNITY_STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {opportunity.status !== 'prospect' && (
+          <p className="text-xs text-gray-400 mt-2">
+            ℹ️ This opportunity is marked as &quot;{opportunity.status}&quot; and won&apos;t appear in the daily to-do list.
+          </p>
+        )}
       </div>
 
       {/* Add Contact Button */}
@@ -311,7 +367,20 @@ export default function OpportunityDetailPage() {
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Cadence (days)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="90"
+                  value={formData.cadence_days}
+                  onChange={(e) => setFormData({ ...formData, cadence_days: parseInt(e.target.value) || 10 })}
+                  className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                />
+                <p className="text-xs text-gray-400 mt-1">Days between outreach touches</p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium mb-1">Notes</label>
                 <input
                   type="text"
@@ -378,9 +447,9 @@ export default function OpportunityDetailPage() {
                     className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
                       contact.days_since_contact === null
                         ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                        : contact.days_since_contact >= 14
+                        : contact.days_since_contact >= contact.cadence_days
                         ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                        : contact.days_since_contact >= 7
+                        : contact.days_since_contact >= contact.cadence_days * 0.7
                         ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
                         : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
                     }`}
@@ -391,6 +460,7 @@ export default function OpportunityDetailPage() {
                       ? 'Today'
                       : `${contact.days_since_contact}d ago`}
                   </span>
+                  <p className="text-xs text-gray-400 mt-1">{contact.cadence_days}d cadence</p>
                 </div>
               </div>
 

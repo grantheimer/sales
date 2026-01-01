@@ -27,10 +27,19 @@ export type HealthSystem = {
   updated_at: string;
 };
 
+export type OpportunityStatus = 'prospect' | 'active' | 'won';
+
+export const OPPORTUNITY_STATUSES: { value: OpportunityStatus; label: string }[] = [
+  { value: 'prospect', label: 'Prospect' },
+  { value: 'active', label: 'Active' },
+  { value: 'won', label: 'Won' },
+];
+
 export type Opportunity = {
   id: string;
   health_system_id: string;
   product: string;
+  status: OpportunityStatus;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -45,6 +54,7 @@ export type Contact = {
   email: string | null;
   phone: string | null;
   notes: string | null;
+  cadence_days: number;
   created_at: string;
   updated_at: string;
 };
