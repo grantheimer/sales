@@ -13,6 +13,21 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<ContactWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const handleDelete = async (id: string, name: string) => {
+    if (!confirm(`Delete "${name}"? This removes their outreach history.`)) {
+      return;
+    }
+
+    const { error } = await supabase.from('contacts').delete().eq('id', id);
+
+    if (error) {
+      console.error('Error deleting contact:', error);
+      alert('Failed to delete contact');
+    } else {
+      await fetchData();
+    }
+  };
+
   const fetchData = async () => {
     const { data: contactsData } = await supabase
       .from('contacts')
@@ -136,15 +151,28 @@ export default function ContactsPage() {
                               {contact.email}{contact.email && contact.phone && ' · '}{contact.phone}
                             </p>
                           )}
+                          {!contact.opportunity_id && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
+                              No opportunity
+                            </span>
+                          )}
                         </div>
-                        {contact.opportunity_id && (
-                          <Link
-                            href={`/opportunities/${contact.opportunity_id}`}
-                            className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                        <div className="flex gap-1">
+                          {contact.opportunity_id && (
+                            <Link
+                              href={`/opportunities/${contact.opportunity_id}`}
+                              className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                            >
+                              View
+                            </Link>
+                          )}
+                          <button
+                            onClick={() => handleDelete(contact.id, contact.name)}
+                            className="px-3 py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                           >
-                            View
-                          </Link>
-                        )}
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
