@@ -118,38 +118,67 @@ export default function OpportunityDetailPage() {
     setSaving(true);
 
     if (editingId) {
-      const { error } = await supabase
-        .from('contacts')
-        .update({
-          name: formData.name,
-          role: formData.role || null,
-          email: formData.email || null,
-          phone: formData.phone || null,
-          notes: formData.notes || null,
-          cadence_days: formData.cadence_days,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', editingId);
-
-      if (error) {
-        console.error('Error updating contact:', error);
-        alert('Failed to update contact');
-      }
-    } else {
-      const { error } = await supabase.from('contacts').insert({
+      // Try update with cadence_days first, fall back to without if column doesn't exist
+      let error;
+      const updateData: Record<string, unknown> = {
         name: formData.name,
         role: formData.role || null,
         email: formData.email || null,
         phone: formData.phone || null,
         notes: formData.notes || null,
-        cadence_days: formData.cadence_days,
-        opportunity_id: opportunityId,
-        health_system_id: opportunity?.health_system_id,
-      });
+        updated_at: new Date().toISOString(),
+      };
+
+      // Try with cadence_days first
+      const resultWithCadence = await supabase
+        .from('contacts')
+        .update({ ...updateData, cadence_days: formData.cadence_days })
+        .eq('id', editingId);
+
+      if (resultWithCadence.error) {
+        // If it failed, try without cadence_days (column might not exist)
+        const resultWithoutCadence = await supabase
+          .from('contacts')
+          .update(updateData)
+          .eq('id', editingId);
+        error = resultWithoutCadence.error;
+        
+        if (!error) {
+          console.warn('Note: cadence_days column may not exist. Run migration v4 to enable cadence editing.');
+        }
+      }
 
       if (error) {
-        console.error('Error creating contact:', error);
-        alert('Failed to create contact');
+        console.error('Error updating contact:', error);
+        alert('Failed to update contact: ' + error.message);
+      }
+    } else {
+      // Try insert with cadence_days first
+      const insertData: Record<string, unknown> = {
+        name: formData.name,
+        role: formData.role || null,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        notes: formData.notes || null,
+        opportunity_id: opportunityId,
+        health_system_id: opportunity?.health_system_id,
+      };
+
+      const resultWithCadence = await supabase.from('contacts').insert({
+        ...insertData,
+        cadence_days: formData.cadence_days,
+      });
+
+      if (resultWithCadence.error) {
+        // Try without cadence_days
+        const resultWithoutCadence = await supabase.from('contacts').insert(insertData);
+        
+        if (resultWithoutCadence.error) {
+          console.error('Error creating contact:', resultWithoutCadence.error);
+          alert('Failed to create contact: ' + resultWithoutCadence.error.message);
+        } else {
+          console.warn('Note: cadence_days column may not exist. Run migration v4 to enable cadence editing.');
+        }
       }
     }
 

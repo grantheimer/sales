@@ -171,7 +171,7 @@ export default function TodoPage() {
         daysSinceContact = Math.floor((today.getTime() - lastContactDate.getTime()) / (1000 * 60 * 60 * 24));
         
         // Due date is last contact date + cadence_days (in business days)
-        dueDate = addBusinessDays(lastContactDate, contact.cadence_days);
+        dueDate = addBusinessDays(lastContactDate, contact.cadence_days || 10);
       } else {
         // Never contacted - due today (or first business day if weekend)
         dueDate = isBizDay ? today : nextBizDay;
@@ -386,7 +386,7 @@ export default function TodoPage() {
                     : 'Never contacted'
                   }
                   {' · '}
-                  {contact.cadence_days}d cadence
+                  {contact.cadence_days || 10}d cadence
                 </p>
               </div>
               <Link
