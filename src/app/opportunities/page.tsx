@@ -65,12 +65,12 @@ export default function OpportunitiesPage() {
 
     // Sort by status (prospect first), then by account name, then product
     enrichedOpps.sort((a, b) => {
-      const statusOrder = { prospect: 0, active: 1, won: 2 };
-      const statusCompare = (statusOrder[a.status] || 0) - (statusOrder[b.status] || 0);
+      const statusOrder: Record<string, number> = { prospect: 0, active: 1, won: 2 };
+      const statusCompare = (statusOrder[a.status || 'prospect'] || 0) - (statusOrder[b.status || 'prospect'] || 0);
       if (statusCompare !== 0) return statusCompare;
-      const accountCompare = a.health_system.name.localeCompare(b.health_system.name);
+      const accountCompare = (a.health_system?.name || '').localeCompare(b.health_system?.name || '');
       if (accountCompare !== 0) return accountCompare;
-      return a.product.localeCompare(b.product);
+      return (a.product || '').localeCompare(b.product || '');
     });
 
     setOpportunities(enrichedOpps);
@@ -89,10 +89,10 @@ export default function OpportunitiesPage() {
     );
   }
 
-  // Filter opportunities by status
+  // Filter opportunities by status (treat missing status as 'prospect')
   const filteredOpportunities = statusFilter === 'all'
     ? opportunities
-    : opportunities.filter(o => o.status === statusFilter);
+    : opportunities.filter(o => (o.status || 'prospect') === statusFilter);
 
   // Group by account
   const oppsByAccount: Record<string, OpportunityWithDetails[]> = {};
@@ -110,8 +110,8 @@ export default function OpportunitiesPage() {
     return nameA.localeCompare(nameB);
   });
 
-  // Count by status
-  const prospectCount = opportunities.filter(o => o.status === 'prospect').length;
+  // Count by status (default to prospect if status not set)
+  const prospectCount = opportunities.filter(o => !o.status || o.status === 'prospect').length;
   const activeCount = opportunities.filter(o => o.status === 'active').length;
   const wonCount = opportunities.filter(o => o.status === 'won').length;
 
@@ -213,8 +213,8 @@ export default function OpportunitiesPage() {
                               <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 font-medium">
                                 {opp.product}
                               </span>
-                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusBadge(opp.status)}`}>
-                                {opp.status.charAt(0).toUpperCase() + opp.status.slice(1)}
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusBadge(opp.status || 'prospect')}`}>
+                                {(opp.status || 'prospect').charAt(0).toUpperCase() + (opp.status || 'prospect').slice(1)}
                               </span>
                               <span className="text-sm text-gray-500">
                                 {opp.contact_count} contact{opp.contact_count !== 1 ? 's' : ''}

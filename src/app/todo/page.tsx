@@ -105,11 +105,15 @@ export default function TodoPage() {
     const nextBizDay = getNextBusinessDay(today);
     setNextBusinessDay(nextBizDay);
 
-    // Get opportunities that are prospects (not active or won)
-    const { data: oppsData } = await supabase
+    // Get all opportunities with health systems
+    const { data: allOppsData } = await supabase
       .from('opportunities')
-      .select('*, health_systems(*)')
-      .eq('status', 'prospect');
+      .select('*, health_systems(*)');
+
+    // Filter to prospects (status is 'prospect' or null/undefined for backwards compatibility)
+    const oppsData = (allOppsData || []).filter(
+      (o: Opportunity) => !o.status || o.status === 'prospect'
+    );
 
     // Get contacts for prospect opportunities
     const prospectOppIds = (oppsData || []).map((o: Opportunity) => o.id);

@@ -97,8 +97,8 @@ export default function DashboardPage() {
     const contactsData = contacts || [];
     const logsData = logs || [];
 
-    // Count opportunities by status
-    const prospectOpps = oppsData.filter((o: Opportunity) => o.status === 'prospect');
+    // Count opportunities by status (treat missing status as 'prospect')
+    const prospectOpps = oppsData.filter((o: Opportunity) => !o.status || o.status === 'prospect');
     const activeOpps = oppsData.filter((o: Opportunity) => o.status === 'active');
     const wonOpps = oppsData.filter((o: Opportunity) => o.status === 'won');
 
