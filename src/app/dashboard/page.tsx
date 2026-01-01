@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, Contact, HealthSystem, OutreachLog } from '@/lib/supabase';
+import { supabase, Contact, HealthSystem, OutreachLog, PRODUCTS } from '@/lib/supabase';
 
 type Stats = {
   totalContacts: number;
@@ -15,7 +15,7 @@ type Stats = {
   emailsThisWeek: number;
   meetingsThisWeek: number;
   currentStreak: number;
-  pipelineByStage: Record<string, number>;
+  contactsByProduct: Record<string, number>;
   recentActivity: Array<{
     contactName: string;
     accountName: string;
@@ -129,11 +129,12 @@ export default function DashboardPage() {
       }
     }
 
-    // Pipeline by stage
-    const pipelineByStage: Record<string, number> = {};
-    accountsData.forEach((a: HealthSystem) => {
-      const stage = a.deal_stage || 'unknown';
-      pipelineByStage[stage] = (pipelineByStage[stage] || 0) + 1;
+    // Contacts by product
+    const contactsByProduct: Record<string, number> = {};
+    contactsData.forEach((c: Contact & { health_systems: HealthSystem }) => {
+      (c.products || []).forEach((product: string) => {
+        contactsByProduct[product] = (contactsByProduct[product] || 0) + 1;
+      });
     });
 
     // Recent activity (last 5)
@@ -157,7 +158,7 @@ export default function DashboardPage() {
       emailsThisWeek,
       meetingsThisWeek,
       currentStreak: streak,
-      pipelineByStage,
+      contactsByProduct,
       recentActivity,
     });
 
@@ -173,16 +174,6 @@ export default function DashboardPage() {
   }
 
   if (!stats) return null;
-
-  const stageColors: Record<string, string> = {
-    prospecting: 'bg-gray-100 text-gray-700',
-    qualified: 'bg-blue-100 text-blue-700',
-    proposal: 'bg-yellow-100 text-yellow-700',
-    negotiation: 'bg-orange-100 text-orange-700',
-    'closed-won': 'bg-green-100 text-green-700',
-    'closed-lost': 'bg-red-100 text-red-700',
-    nurturing: 'bg-purple-100 text-purple-700',
-  };
 
   const methodIcons: Record<string, string> = {
     call: '📞',
@@ -283,19 +274,22 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Pipeline by Stage */}
+        {/* Contacts by Product */}
         <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border shadow-sm">
-          <h3 className="font-semibold mb-4">Pipeline by Stage</h3>
+          <h3 className="font-semibold mb-4">Contacts by Product</h3>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(stats.pipelineByStage).map(([stage, count]) => (
-              <div
-                key={stage}
-                className={`px-3 py-2 rounded-lg ${stageColors[stage] || 'bg-gray-100 text-gray-700'}`}
-              >
-                <span className="capitalize text-sm">{stage.replace('-', ' ')}</span>
-                <span className="font-bold ml-2">{count}</span>
-              </div>
-            ))}
+            {PRODUCTS.map((product) => {
+              const count = stats.contactsByProduct[product] || 0;
+              return (
+                <div
+                  key={product}
+                  className={`px-3 py-2 rounded-lg ${count > 0 ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : 'bg-gray-100 text-gray-400'}`}
+                >
+                  <span className="text-sm">{product}</span>
+                  <span className="font-bold ml-2">{count}</span>
+                </div>
+              );
+            })}
           </div>
           <div className="mt-4 pt-4 border-t flex justify-between text-sm text-gray-500">
             <span>{stats.totalAccounts} accounts</span>

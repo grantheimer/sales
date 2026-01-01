@@ -162,6 +162,18 @@ export default function TodoPage() {
                     {contact.role && `${contact.role} at `}
                     <span className="font-medium">{contact.health_system?.name}</span>
                   </p>
+                  {contact.products && contact.products.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {contact.products.map((product) => (
+                        <span
+                          key={product}
+                          className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                        >
+                          {product}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="text-right space-y-1">
                   <span

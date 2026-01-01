@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { supabase, HealthSystem, Contact } from '@/lib/supabase';
+import { supabase, HealthSystem, Contact, PRODUCTS } from '@/lib/supabase';
 import Link from 'next/link';
 
 type ContactFormData = {
@@ -11,6 +11,7 @@ type ContactFormData = {
   email: string;
   phone: string;
   notes: string;
+  products: string[];
 };
 
 const emptyContactForm: ContactFormData = {
@@ -19,6 +20,7 @@ const emptyContactForm: ContactFormData = {
   email: '',
   phone: '',
   notes: '',
+  products: [],
 };
 
 export default function AccountDetailPage() {
@@ -77,7 +79,12 @@ export default function AccountDetailPage() {
       const { error } = await supabase
         .from('contacts')
         .update({
-          ...formData,
+          name: formData.name,
+          role: formData.role || null,
+          email: formData.email || null,
+          phone: formData.phone || null,
+          notes: formData.notes || null,
+          products: formData.products,
           updated_at: new Date().toISOString(),
         })
         .eq('id', editingId);
@@ -88,7 +95,12 @@ export default function AccountDetailPage() {
       }
     } else {
       const { error } = await supabase.from('contacts').insert({
-        ...formData,
+        name: formData.name,
+        role: formData.role || null,
+        email: formData.email || null,
+        phone: formData.phone || null,
+        notes: formData.notes || null,
+        products: formData.products,
         health_system_id: accountId,
       });
 
@@ -112,9 +124,19 @@ export default function AccountDetailPage() {
       email: contact.email || '',
       phone: contact.phone || '',
       notes: contact.notes || '',
+      products: contact.products || [],
     });
     setEditingId(contact.id);
     setShowForm(true);
+  };
+
+  const toggleProduct = (product: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      products: prev.products.includes(product)
+        ? prev.products.filter((p) => p !== product)
+        : [...prev.products, product],
+    }));
   };
 
   const handleDelete = async (id: string, name: string) => {
@@ -167,10 +189,11 @@ export default function AccountDetailPage() {
             &larr; Back to Accounts
           </Link>
           <h1 className="text-2xl font-bold mt-1">{account.name}</h1>
-          <p className="text-gray-500 text-sm capitalize">
-            {account.deal_stage.replace('-', ' ')}
-            {account.revenue_potential && ` · ${account.revenue_potential}`}
-          </p>
+          {account.major_opportunities > 0 && (
+            <p className="text-gray-500 text-sm">
+              {account.major_opportunities} major opportunit{account.major_opportunities !== 1 ? 'ies' : 'y'}
+            </p>
+          )}
         </div>
         {!showForm && (
           <button
@@ -237,6 +260,31 @@ export default function AccountDetailPage() {
               </div>
 
               <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">
+                  Products <span className="text-red-500">*</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {PRODUCTS.map((product) => (
+                    <button
+                      key={product}
+                      type="button"
+                      onClick={() => toggleProduct(product)}
+                      className={`px-3 py-1.5 text-sm rounded-lg border transition ${
+                        formData.products.includes(product)
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600'
+                      }`}
+                    >
+                      {product}
+                    </button>
+                  ))}
+                </div>
+                {formData.products.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">Select at least one product</p>
+                )}
+              </div>
+
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium mb-1">Notes</label>
                 <input
                   type="text"
@@ -251,7 +299,7 @@ export default function AccountDetailPage() {
             <div className="flex gap-2 mt-4">
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || formData.products.length === 0}
                 className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition disabled:opacity-50"
               >
                 {saving ? 'Saving...' : editingId ? 'Update' : 'Add Contact'}
@@ -299,6 +347,18 @@ export default function AccountDetailPage() {
                     <p className="text-xs text-gray-400 mt-0.5">
                       {contact.email}{contact.email && contact.phone && ' · '}{contact.phone}
                     </p>
+                  )}
+                  {contact.products && contact.products.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {contact.products.map((product) => (
+                        <span
+                          key={product}
+                          className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                        >
+                          {product}
+                        </span>
+                      ))}
+                    </div>
                   )}
                   {contact.notes && (
                     <p className="text-xs text-gray-400 mt-1 italic">{contact.notes}</p>

@@ -1,36 +1,25 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, HealthSystem } from '@/lib/supabase';
+import { supabase, HealthSystem, PRODUCTS } from '@/lib/supabase';
 import Link from 'next/link';
 
 type HealthSystemWithCount = HealthSystem & {
   contact_count: number;
+  products: string[];
 };
 
 type FormData = {
   name: string;
-  deal_stage: string;
-  revenue_potential: string;
+  major_opportunities: number;
   notes: string;
 };
 
 const emptyForm: FormData = {
   name: '',
-  deal_stage: 'prospecting',
-  revenue_potential: '',
+  major_opportunities: 0,
   notes: '',
 };
-
-const dealStages = [
-  'prospecting',
-  'qualified',
-  'proposal',
-  'negotiation',
-  'closed-won',
-  'closed-lost',
-  'nurturing',
-];
 
 export default function AccountsPage() {
   const [healthSystems, setHealthSystems] = useState<HealthSystemWithCount[]>([]);
@@ -54,16 +43,23 @@ export default function AccountsPage() {
 
     const { data: contacts } = await supabase
       .from('contacts')
-      .select('health_system_id');
+      .select('health_system_id, products');
 
     const contactCounts: Record<string, number> = {};
-    (contacts || []).forEach((c: { health_system_id: string }) => {
+    const accountProducts: Record<string, Set<string>> = {};
+
+    (contacts || []).forEach((c: { health_system_id: string; products: string[] }) => {
       contactCounts[c.health_system_id] = (contactCounts[c.health_system_id] || 0) + 1;
+      if (!accountProducts[c.health_system_id]) {
+        accountProducts[c.health_system_id] = new Set();
+      }
+      (c.products || []).forEach((p) => accountProducts[c.health_system_id].add(p));
     });
 
     const systemsWithCounts = (systems || []).map((system) => ({
       ...system,
       contact_count: contactCounts[system.id] || 0,
+      products: Array.from(accountProducts[system.id] || []).sort(),
     }));
 
     setHealthSystems(systemsWithCounts);
@@ -110,8 +106,7 @@ export default function AccountsPage() {
   const handleEdit = (system: HealthSystem) => {
     setFormData({
       name: system.name,
-      deal_stage: system.deal_stage || 'prospecting',
-      revenue_potential: system.revenue_potential || '',
+      major_opportunities: system.major_opportunities || 0,
       notes: system.notes || '',
     });
     setEditingId(system.id);
@@ -171,7 +166,7 @@ export default function AccountsPage() {
           </h2>
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-sm font-medium mb-1">
                   Health System Name <span className="text-red-500">*</span>
                 </label>
@@ -186,28 +181,17 @@ export default function AccountsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Deal Stage</label>
-                <select
-                  value={formData.deal_stage}
-                  onChange={(e) => setFormData({ ...formData, deal_stage: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                >
-                  {dealStages.map((stage) => (
-                    <option key={stage} value={stage}>
-                      {stage.charAt(0).toUpperCase() + stage.slice(1).replace('-', ' ')}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">Revenue Potential</label>
+                <label className="block text-sm font-medium mb-1">
+                  Major Opportunities <span className="text-red-500">*</span>
+                </label>
                 <input
-                  type="text"
-                  value={formData.revenue_potential}
-                  onChange={(e) => setFormData({ ...formData, revenue_potential: e.target.value })}
+                  type="number"
+                  required
+                  min="0"
+                  value={formData.major_opportunities}
+                  onChange={(e) => setFormData({ ...formData, major_opportunities: parseInt(e.target.value) || 0 })}
                   className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-                  placeholder="e.g., $500K - $1M"
+                  placeholder="0"
                 />
               </div>
 
@@ -262,22 +246,29 @@ export default function AccountsPage() {
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold">{system.name}</h3>
-                    <span className={`text-xs px-2 py-0.5 rounded-full capitalize ${
-                      system.deal_stage === 'closed-won' ? 'bg-green-100 text-green-700' :
-                      system.deal_stage === 'closed-lost' ? 'bg-red-100 text-red-700' :
-                      system.deal_stage === 'negotiation' ? 'bg-orange-100 text-orange-700' :
-                      system.deal_stage === 'proposal' ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-gray-100 text-gray-600'
-                    }`}>
-                      {system.deal_stage.replace('-', ' ')}
-                    </span>
+                    {system.major_opportunities > 0 && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                        {system.major_opportunities} opp{system.major_opportunities !== 1 ? 's' : ''}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-gray-500 mt-0.5">
                     {system.contact_count} contact{system.contact_count !== 1 ? 's' : ''}
-                    {system.revenue_potential && ` · ${system.revenue_potential}`}
                   </p>
+                  {system.products.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {system.products.map((product) => (
+                        <span
+                          key={product}
+                          className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                        >
+                          {product}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-1">
                   <Link

@@ -6,11 +6,23 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholde
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+export const PRODUCTS = [
+  'Core',
+  'Coding Intelligence',
+  'Discovery',
+  'Periop',
+  'Procedure',
+  'Medical Necessity',
+  'Precision Sets',
+  'Normalize',
+] as const;
+
+export type Product = typeof PRODUCTS[number];
+
 export type HealthSystem = {
   id: string;
   name: string;
-  deal_stage: string;
-  revenue_potential: string | null;
+  major_opportunities: number;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -23,6 +35,7 @@ export type Contact = {
   role: string | null;
   email: string | null;
   phone: string | null;
+  products: string[];
   notes: string | null;
   created_at: string;
   updated_at: string;
