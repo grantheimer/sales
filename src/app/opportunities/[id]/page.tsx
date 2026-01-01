@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase, HealthSystem, Opportunity, Contact, OutreachLog, OPPORTUNITY_STATUSES, OpportunityStatus } from '@/lib/supabase';
 import Link from 'next/link';
+import ContactHistoryModal from '@/components/ContactHistoryModal';
 
 type ContactFormData = {
   name: string;
@@ -29,6 +30,12 @@ type ContactWithOutreach = Contact & {
   days_since_contact: number | null;
 };
 
+type OutreachSelection = {
+  emailed: boolean;
+  called: boolean;
+  notes: string;
+};
+
 export default function OpportunityDetailPage() {
   const params = useParams();
   const opportunityId = params.id as string;
@@ -41,9 +48,15 @@ export default function OpportunityDetailPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<ContactFormData>(emptyContactForm);
   const [saving, setSaving] = useState(false);
-  const [loggingId, setLoggingId] = useState<string | null>(null);
-  const [logNotes, setLogNotes] = useState<Record<string, string>>({});
   const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  // Selection state for outreach logging
+  const [selections, setSelections] = useState<Record<string, OutreachSelection>>({});
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+
+  // History modal state
+  const [historyContactId, setHistoryContactId] = useState<string | null>(null);
+  const [historyContactName, setHistoryContactName] = useState<string>('');
 
   const fetchData = async () => {
     const { data: oppData, error: oppError } = await supabase
@@ -118,7 +131,6 @@ export default function OpportunityDetailPage() {
     setSaving(true);
 
     if (editingId) {
-      // Try update with cadence_days first, fall back to without if column doesn't exist
       let error;
       const updateData: Record<string, unknown> = {
         name: formData.name,
@@ -129,14 +141,12 @@ export default function OpportunityDetailPage() {
         updated_at: new Date().toISOString(),
       };
 
-      // Try with cadence_days first
       const resultWithCadence = await supabase
         .from('contacts')
         .update({ ...updateData, cadence_days: formData.cadence_days })
         .eq('id', editingId);
 
       if (resultWithCadence.error) {
-        // If it failed, try without cadence_days (column might not exist)
         const resultWithoutCadence = await supabase
           .from('contacts')
           .update(updateData)
@@ -153,7 +163,6 @@ export default function OpportunityDetailPage() {
         alert('Failed to update contact: ' + error.message);
       }
     } else {
-      // Try insert with cadence_days first
       const insertData: Record<string, unknown> = {
         name: formData.name,
         role: formData.role || null,
@@ -170,7 +179,6 @@ export default function OpportunityDetailPage() {
       });
 
       if (resultWithCadence.error) {
-        // Try without cadence_days
         const resultWithoutCadence = await supabase.from('contacts').insert(insertData);
         
         if (resultWithoutCadence.error) {
@@ -223,26 +231,6 @@ export default function OpportunityDetailPage() {
     setFormData(emptyContactForm);
   };
 
-  const logContact = async (contactId: string, method: 'call' | 'email' | 'meeting') => {
-    setLoggingId(contactId);
-    const notes = logNotes[contactId] || null;
-
-    const { error } = await supabase.from('outreach_logs').insert({
-      contact_id: contactId,
-      contact_method: method,
-      notes,
-    });
-
-    if (error) {
-      console.error('Error logging contact:', error);
-      alert('Failed to log contact');
-    } else {
-      setLogNotes((prev) => ({ ...prev, [contactId]: '' }));
-      await fetchData();
-    }
-    setLoggingId(null);
-  };
-
   const handleStatusChange = async (newStatus: OpportunityStatus) => {
     if (!opportunity) return;
     setUpdatingStatus(true);
@@ -262,6 +250,84 @@ export default function OpportunityDetailPage() {
       setOpportunity({ ...opportunity, status: newStatus });
     }
     setUpdatingStatus(false);
+  };
+
+  // Outreach logging functions
+  const toggleSelection = (contactId: string, field: 'emailed' | 'called') => {
+    setSelections(prev => ({
+      ...prev,
+      [contactId]: {
+        emailed: prev[contactId]?.emailed || false,
+        called: prev[contactId]?.called || false,
+        notes: prev[contactId]?.notes || '',
+        [field]: !prev[contactId]?.[field],
+      },
+    }));
+  };
+
+  const updateNotes = (contactId: string, notes: string) => {
+    setSelections(prev => ({
+      ...prev,
+      [contactId]: {
+        emailed: prev[contactId]?.emailed || false,
+        called: prev[contactId]?.called || false,
+        notes,
+      },
+    }));
+  };
+
+  const handleLogSubmit = async (contactId: string) => {
+    const selection = selections[contactId];
+    if (!selection?.emailed && !selection?.called) {
+      alert('Please select at least one action (Emailed or Called)');
+      return;
+    }
+
+    setSubmittingId(contactId);
+
+    const logs: { contact_id: string; contact_method: string; notes: string | null }[] = [];
+    
+    if (selection.emailed) {
+      logs.push({
+        contact_id: contactId,
+        contact_method: 'email',
+        notes: selection.notes || null,
+      });
+    }
+    
+    if (selection.called) {
+      logs.push({
+        contact_id: contactId,
+        contact_method: 'call',
+        notes: selection.notes || null,
+      });
+    }
+
+    const { error } = await supabase.from('outreach_logs').insert(logs);
+
+    if (error) {
+      console.error('Error logging outreach:', error);
+      alert('Failed to log outreach');
+    } else {
+      setSelections(prev => {
+        const newSelections = { ...prev };
+        delete newSelections[contactId];
+        return newSelections;
+      });
+      await fetchData();
+    }
+    
+    setSubmittingId(null);
+  };
+
+  const openHistory = (contactId: string, contactName: string) => {
+    setHistoryContactId(contactId);
+    setHistoryContactName(contactName);
+  };
+
+  const closeHistory = () => {
+    setHistoryContactId(null);
+    setHistoryContactName('');
   };
 
   if (loading) {
@@ -454,90 +520,134 @@ export default function OpportunityDetailPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {contacts.map((contact) => (
-            <div
-              key={contact.id}
-              className="border rounded-xl p-4 bg-white dark:bg-gray-800 shadow-sm"
-            >
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="font-semibold">{contact.name}</h3>
-                  {contact.role && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{contact.role}</p>
-                  )}
-                  {(contact.email || contact.phone) && (
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {contact.email}{contact.email && contact.phone && ' · '}{contact.phone}
-                    </p>
-                  )}
+          {contacts.map((contact) => {
+            const selection = selections[contact.id] || { emailed: false, called: false, notes: '' };
+            const hasSelection = selection.emailed || selection.called;
+
+            return (
+              <div
+                key={contact.id}
+                className="border rounded-xl p-4 bg-white dark:bg-gray-800 shadow-sm"
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <button
+                      onClick={() => openHistory(contact.id, contact.name)}
+                      className="font-semibold text-blue-600 hover:text-blue-700 hover:underline text-left"
+                    >
+                      {contact.name}
+                    </button>
+                    {contact.role && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{contact.role}</p>
+                    )}
+                    {(contact.email || contact.phone) && (
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        {contact.email}{contact.email && contact.phone && ' · '}{contact.phone}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
+                        contact.days_since_contact === null
+                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                          : contact.days_since_contact >= (contact.cadence_days || 10)
+                          ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                          : contact.days_since_contact >= (contact.cadence_days || 10) * 0.7
+                          ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
+                          : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                      }`}
+                    >
+                      {contact.days_since_contact === null
+                        ? 'Never contacted'
+                        : contact.days_since_contact === 0
+                        ? 'Today'
+                        : `${contact.days_since_contact}d ago`}
+                    </span>
+                    <p className="text-xs text-gray-400 mt-1">{contact.cadence_days || 10}d cadence</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span
-                    className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
-                      contact.days_since_contact === null
-                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
-                        : contact.days_since_contact >= (contact.cadence_days || 10)
-                        ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                        : contact.days_since_contact >= (contact.cadence_days || 10) * 0.7
-                        ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200'
-                        : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+
+                {/* Toggle Buttons */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button
+                    onClick={() => toggleSelection(contact.id, 'emailed')}
+                    className={`flex-1 sm:flex-none min-w-[100px] px-4 py-3 sm:py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      selection.emailed
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
                     }`}
                   >
-                    {contact.days_since_contact === null
-                      ? 'Never contacted'
-                      : contact.days_since_contact === 0
-                      ? 'Today'
-                      : `${contact.days_since_contact}d ago`}
-                  </span>
-                  <p className="text-xs text-gray-400 mt-1">{contact.cadence_days || 10}d cadence</p>
-                </div>
-              </div>
-
-              {/* Quick Log Buttons */}
-              <div className="flex flex-wrap gap-2 mb-3">
-                <button
-                  onClick={() => logContact(contact.id, 'email')}
-                  disabled={loggingId === contact.id}
-                  className="flex-1 sm:flex-none min-w-[100px] px-4 py-3 sm:py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 active:bg-blue-800 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-                >
-                  <span>✉️</span> Email
-                </button>
-                <button
-                  onClick={() => logContact(contact.id, 'call')}
-                  disabled={loggingId === contact.id}
-                  className="flex-1 sm:flex-none min-w-[100px] px-4 py-3 sm:py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 active:bg-green-800 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-                >
-                  <span>📞</span> Call
-                </button>
-                <div className="hidden sm:block flex-1" />
-                <div className="flex gap-2 w-full sm:w-auto">
-                  <button
-                    onClick={() => handleEdit(contact)}
-                    className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 transition"
-                  >
-                    Edit
+                    <span>{selection.emailed ? '✓' : '○'}</span> Emailed
                   </button>
                   <button
-                    onClick={() => handleDelete(contact.id, contact.name)}
-                    className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 active:bg-red-100 transition"
+                    onClick={() => toggleSelection(contact.id, 'called')}
+                    className={`flex-1 sm:flex-none min-w-[100px] px-4 py-3 sm:py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      selection.called
+                        ? 'bg-orange-500 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                    }`}
                   >
-                    Delete
+                    <span>{selection.called ? '✓' : '○'}</span> Called
                   </button>
+                  <div className="hidden sm:block flex-1" />
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={() => handleEdit(contact)}
+                      className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 transition"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(contact.id, contact.name)}
+                      className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 active:bg-red-100 transition"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <input
-                type="text"
-                placeholder="Add notes (optional)"
-                value={logNotes[contact.id] || ''}
-                onChange={(e) =>
-                  setLogNotes((prev) => ({ ...prev, [contact.id]: e.target.value }))
-                }
-                className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-              />
-            </div>
-          ))}
+                {/* Notes */}
+                <input
+                  type="text"
+                  placeholder="Notes (optional)"
+                  value={selection.notes}
+                  onChange={(e) => updateNotes(contact.id, e.target.value)}
+                  className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 mb-3"
+                />
+
+                {/* Submit Button */}
+                <button
+                  onClick={() => handleLogSubmit(contact.id)}
+                  disabled={submittingId === contact.id || !hasSelection}
+                  className={`w-full py-3 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                    hasSelection
+                      ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'
+                  } disabled:opacity-50`}
+                >
+                  {submittingId === contact.id ? (
+                    'Saving...'
+                  ) : (
+                    <>
+                      <span>✓</span> Log Outreach
+                    </>
+                  )}
+                </button>
+              </div>
+            );
+          })}
         </div>
+      )}
+
+      {/* History Modal */}
+      {historyContactId && (
+        <ContactHistoryModal
+          contactId={historyContactId}
+          contactName={historyContactName}
+          onClose={closeHistory}
+          onDelete={fetchData}
+        />
       )}
     </div>
   );

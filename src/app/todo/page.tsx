@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase, Contact, HealthSystem, Opportunity, OutreachLog } from '@/lib/supabase';
 import Link from 'next/link';
+import ContactHistoryModal from '@/components/ContactHistoryModal';
 
 type ContactWithDueInfo = Contact & {
   health_system: HealthSystem;
@@ -12,6 +13,12 @@ type ContactWithDueInfo = Contact & {
   days_overdue: number;
   due_date: string;
   is_rollover: boolean;
+};
+
+type OutreachSelection = {
+  emailed: boolean;
+  called: boolean;
+  notes: string;
 };
 
 // Helper: Check if a date is a business day (Mon-Fri)
@@ -28,16 +35,6 @@ function getNextBusinessDay(fromDate: Date): Date {
     next.setDate(next.getDate() + 1);
   }
   return next;
-}
-
-// Helper: Get the previous business day from a given date
-function getPreviousBusinessDay(fromDate: Date): Date {
-  const prev = new Date(fromDate);
-  prev.setDate(prev.getDate() - 1);
-  while (!isBusinessDay(prev)) {
-    prev.setDate(prev.getDate() - 1);
-  }
-  return prev;
 }
 
 // Helper: Count business days between two dates (not including start, including end)
@@ -88,14 +85,19 @@ export default function TodoPage() {
   const [nextDayContacts, setNextDayContacts] = useState<ContactWithDueInfo[]>([]);
   const [nextBusinessDay, setNextBusinessDay] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loggingId, setLoggingId] = useState<string | null>(null);
-  const [logNotes, setLogNotes] = useState<Record<string, string>>({});
   const [isBusinessDayToday, setIsBusinessDayToday] = useState(true);
+  
+  // Selection state for each contact
+  const [selections, setSelections] = useState<Record<string, OutreachSelection>>({});
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  
+  // History modal state
+  const [historyContactId, setHistoryContactId] = useState<string | null>(null);
+  const [historyContactName, setHistoryContactName] = useState<string>('');
 
   const fetchData = async () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayStr = formatDate(today);
     
     // Check if today is a business day
     const isBizDay = isBusinessDay(today);
@@ -226,24 +228,82 @@ export default function TodoPage() {
     fetchData();
   }, []);
 
-  const logOutreach = async (contactId: string, method: 'call' | 'email' | 'meeting') => {
-    setLoggingId(contactId);
-    const notes = logNotes[contactId] || null;
+  const toggleSelection = (contactId: string, field: 'emailed' | 'called') => {
+    setSelections(prev => ({
+      ...prev,
+      [contactId]: {
+        emailed: prev[contactId]?.emailed || false,
+        called: prev[contactId]?.called || false,
+        notes: prev[contactId]?.notes || '',
+        [field]: !prev[contactId]?.[field],
+      },
+    }));
+  };
 
-    const { error } = await supabase.from('outreach_logs').insert({
-      contact_id: contactId,
-      contact_method: method,
-      notes,
-    });
+  const updateNotes = (contactId: string, notes: string) => {
+    setSelections(prev => ({
+      ...prev,
+      [contactId]: {
+        emailed: prev[contactId]?.emailed || false,
+        called: prev[contactId]?.called || false,
+        notes,
+      },
+    }));
+  };
+
+  const handleSubmit = async (contactId: string) => {
+    const selection = selections[contactId];
+    if (!selection?.emailed && !selection?.called) {
+      alert('Please select at least one action (Emailed or Called)');
+      return;
+    }
+
+    setSubmittingId(contactId);
+
+    const logs: { contact_id: string; contact_method: string; notes: string | null }[] = [];
+    
+    if (selection.emailed) {
+      logs.push({
+        contact_id: contactId,
+        contact_method: 'email',
+        notes: selection.notes || null,
+      });
+    }
+    
+    if (selection.called) {
+      logs.push({
+        contact_id: contactId,
+        contact_method: 'call',
+        notes: selection.notes || null,
+      });
+    }
+
+    const { error } = await supabase.from('outreach_logs').insert(logs);
 
     if (error) {
       console.error('Error logging outreach:', error);
       alert('Failed to log outreach');
     } else {
-      setLogNotes((prev) => ({ ...prev, [contactId]: '' }));
+      // Clear selection and refresh
+      setSelections(prev => {
+        const newSelections = { ...prev };
+        delete newSelections[contactId];
+        return newSelections;
+      });
       await fetchData();
     }
-    setLoggingId(null);
+    
+    setSubmittingId(null);
+  };
+
+  const openHistory = (contactId: string, contactName: string) => {
+    setHistoryContactId(contactId);
+    setHistoryContactName(contactName);
+  };
+
+  const closeHistory = () => {
+    setHistoryContactId(null);
+    setHistoryContactName('');
   };
 
   if (loading) {
@@ -328,7 +388,6 @@ export default function TodoPage() {
 
   // Regular view with today's activities
   const rolloverCount = todayContacts.filter(c => c.is_rollover).length;
-  const dueToday = todayContacts.filter(c => !c.is_rollover).length;
 
   return (
     <div className="min-h-screen p-4 sm:p-6 max-w-4xl mx-auto">
@@ -352,79 +411,114 @@ export default function TodoPage() {
       </div>
 
       <div className="space-y-3">
-        {todayContacts.map((contact) => (
-          <div
-            key={contact.id}
-            className={`border rounded-xl p-4 bg-white dark:bg-gray-800 shadow-sm ${
-              contact.is_rollover ? 'border-red-300 dark:border-red-700' : ''
-            }`}
-          >
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="font-semibold">{contact.name}</h2>
-                  {contact.is_rollover && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 font-medium">
-                      Rollover ({contact.days_overdue}d overdue)
-                    </span>
+        {todayContacts.map((contact) => {
+          const selection = selections[contact.id] || { emailed: false, called: false, notes: '' };
+          const hasSelection = selection.emailed || selection.called;
+
+          return (
+            <div
+              key={contact.id}
+              className={`border rounded-xl p-4 bg-white dark:bg-gray-800 shadow-sm ${
+                contact.is_rollover ? 'border-red-300 dark:border-red-700' : ''
+              }`}
+            >
+              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => openHistory(contact.id, contact.name)}
+                      className="font-semibold text-blue-600 hover:text-blue-700 hover:underline text-left"
+                    >
+                      {contact.name}
+                    </button>
+                    {contact.is_rollover && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 font-medium">
+                        Rollover ({contact.days_overdue}d overdue)
+                      </span>
+                    )}
+                  </div>
+                  {contact.role && (
+                    <p className="text-sm text-gray-500 mt-0.5">{contact.role}</p>
                   )}
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {contact.health_system.name}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                      {contact.opportunity.product}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {contact.last_contact_date
+                      ? `Last: ${new Date(contact.last_contact_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${contact.days_since_contact}d ago)`
+                      : 'Never contacted'
+                    }
+                    {' · '}
+                    {contact.cadence_days || 10}d cadence
+                  </p>
                 </div>
-                {contact.role && (
-                  <p className="text-sm text-gray-500 mt-0.5">{contact.role}</p>
-                )}
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    {contact.health_system.name}
-                  </span>
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                    {contact.opportunity.product}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  {contact.last_contact_date
-                    ? `Last: ${new Date(contact.last_contact_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (${contact.days_since_contact}d ago)`
-                    : 'Never contacted'
-                  }
-                  {' · '}
-                  {contact.cadence_days || 10}d cadence
-                </p>
+                <Link
+                  href={`/opportunities/${contact.opportunity.id}`}
+                  className="text-xs text-blue-600 hover:underline shrink-0"
+                >
+                  View →
+                </Link>
               </div>
-              <Link
-                href={`/opportunities/${contact.opportunity.id}`}
-                className="text-xs text-blue-600 hover:underline shrink-0"
-              >
-                View →
-              </Link>
-            </div>
 
-            <div className="flex gap-2 mb-2">
+              {/* Toggle Buttons */}
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => toggleSelection(contact.id, 'emailed')}
+                  className={`flex-1 sm:flex-none px-4 py-3 sm:py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    selection.emailed
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  <span>{selection.emailed ? '✓' : '○'}</span> Emailed
+                </button>
+                <button
+                  onClick={() => toggleSelection(contact.id, 'called')}
+                  className={`flex-1 sm:flex-none px-4 py-3 sm:py-2 text-sm font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    selection.called
+                      ? 'bg-orange-500 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  <span>{selection.called ? '✓' : '○'}</span> Called
+                </button>
+              </div>
+
+              {/* Notes */}
+              <input
+                type="text"
+                placeholder="Notes (optional)"
+                value={selection.notes}
+                onChange={(e) => updateNotes(contact.id, e.target.value)}
+                className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 mb-3"
+              />
+
+              {/* Submit Button */}
               <button
-                onClick={() => logOutreach(contact.id, 'email')}
-                disabled={loggingId === contact.id}
-                className="flex-1 sm:flex-none px-4 py-3 sm:py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 active:bg-blue-800 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                onClick={() => handleSubmit(contact.id)}
+                disabled={submittingId === contact.id || !hasSelection}
+                className={`w-full py-3 text-sm font-medium rounded-lg transition flex items-center justify-center gap-2 ${
+                  hasSelection
+                    ? 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed dark:bg-gray-700 dark:text-gray-500'
+                } disabled:opacity-50`}
               >
-                <span>✉️</span> Email
-              </button>
-              <button
-                onClick={() => logOutreach(contact.id, 'call')}
-                disabled={loggingId === contact.id}
-                className="flex-1 sm:flex-none px-4 py-3 sm:py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 active:bg-green-800 transition disabled:opacity-50 flex items-center justify-center gap-1.5"
-              >
-                <span>📞</span> Call
+                {submittingId === contact.id ? (
+                  'Saving...'
+                ) : (
+                  <>
+                    <span>✓</span> Mark Complete
+                  </>
+                )}
               </button>
             </div>
-
-            <input
-              type="text"
-              placeholder="Notes (optional)"
-              value={logNotes[contact.id] || ''}
-              onChange={(e) =>
-                setLogNotes((prev) => ({ ...prev, [contact.id]: e.target.value }))
-              }
-              className="w-full px-3 py-2 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600"
-            />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Next business day preview */}
@@ -437,6 +531,16 @@ export default function TodoPage() {
             {nextDayContacts.length} action{nextDayContacts.length !== 1 ? 's' : ''} due
           </p>
         </div>
+      )}
+
+      {/* History Modal */}
+      {historyContactId && (
+        <ContactHistoryModal
+          contactId={historyContactId}
+          contactName={historyContactName}
+          onClose={closeHistory}
+          onDelete={fetchData}
+        />
       )}
     </div>
   );
