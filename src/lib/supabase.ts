@@ -63,7 +63,7 @@ export type OutreachLog = {
   id: string;
   contact_id: string;
   contact_date: string;
-  contact_method: 'call' | 'email' | 'meeting';
+  contact_method: 'call' | 'email';
   notes: string | null;
   created_at: string;
 };

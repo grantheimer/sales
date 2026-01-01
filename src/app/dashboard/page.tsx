@@ -41,7 +41,6 @@ type Stats = {
   outreachThisWeek: number;
   callsThisWeek: number;
   emailsThisWeek: number;
-  meetingsThisWeek: number;
   currentStreak: number;
   recentActivity: Array<{
     contactName: string;
@@ -173,7 +172,6 @@ export default function DashboardPage() {
     // Activity breakdown this week
     const callsThisWeek = thisWeekLogs.filter((l: OutreachLog) => l.contact_method === 'call').length;
     const emailsThisWeek = thisWeekLogs.filter((l: OutreachLog) => l.contact_method === 'email').length;
-    const meetingsThisWeek = thisWeekLogs.filter((l: OutreachLog) => l.contact_method === 'meeting').length;
 
     // Calculate streak (consecutive business days with any outreach activity)
     let streak = 0;
@@ -225,7 +223,6 @@ export default function DashboardPage() {
       outreachThisWeek: thisWeekLogs.length,
       callsThisWeek,
       emailsThisWeek,
-      meetingsThisWeek,
       currentStreak: streak,
       recentActivity,
     });
@@ -246,7 +243,6 @@ export default function DashboardPage() {
   const methodIcons: Record<string, string> = {
     call: '📞',
     email: '✉️',
-    meeting: '🤝',
   };
 
   return (
@@ -326,21 +322,6 @@ export default function DashboardPage() {
                   />
                 </div>
                 <span className="font-medium w-8 text-right">{stats.callsThisWeek}</span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🤝</span>
-                <span className="text-gray-600 dark:text-gray-300">Meetings</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-purple-500 h-2 rounded-full"
-                    style={{ width: `${Math.min((stats.meetingsThisWeek / Math.max(stats.outreachThisWeek, 1)) * 100, 100)}%` }}
-                  />
-                </div>
-                <span className="font-medium w-8 text-right">{stats.meetingsThisWeek}</span>
               </div>
             </div>
           </div>

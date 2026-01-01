@@ -412,13 +412,6 @@ export default function TodoPage() {
               >
                 <span>📞</span> Call
               </button>
-              <button
-                onClick={() => logOutreach(contact.id, 'meeting')}
-                disabled={loggingId === contact.id}
-                className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition disabled:opacity-50 flex items-center gap-1.5"
-              >
-                <span>🤝</span> Meeting
-              </button>
             </div>
 
             <input
