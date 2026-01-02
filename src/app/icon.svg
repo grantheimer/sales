@@ -1,0 +1,20 @@
+<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#F97316" />
+    </linearGradient>
+  </defs>
+  <g fill="url(#g)">
+    <!-- Trunk -->
+    <path d="M14 30C14 30 15 22 16 18C17 14 16 12 16 12L18 12C18 12 17 14 18 18C19 22 20 30 20 30H14Z" />
+    <!-- Left fronds -->
+    <path d="M17 13C17 13 10 10 6 12C2 14 3 16 3 16C3 16 6 14 10 13C14 12 17 13 17 13Z" />
+    <path d="M16 11C16 11 11 6 7 6C3 6 2 8 2 8C2 8 5 7 9 8C13 9 16 11 16 11Z" />
+    <path d="M16 9C16 9 13 4 10 3C7 2 5 3 5 3C5 3 8 3 11 5C14 7 16 9 16 9Z" />
+    <!-- Right fronds -->
+    <path d="M17 13C17 13 24 10 28 12C32 14 31 16 31 16C31 16 28 14 24 13C20 12 17 13 17 13Z" />
+    <path d="M18 11C18 11 23 6 27 6C31 6 32 8 32 8C32 8 29 7 25 8C21 9 18 11 18 11Z" />
+    <path d="M18 9C18 9 21 4 24 3C27 2 29 3 29 3C29 3 26 3 23 5C20 7 18 9 18 9Z" />
+  </g>
+</svg>

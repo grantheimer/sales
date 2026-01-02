@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase, Contact, HealthSystem, Opportunity, OutreachLog } from '@/lib/supabase';
+import { supabase, Contact, OutreachLog } from '@/lib/supabase';
 import Link from 'next/link';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Helper: Check if a date is a business day (Mon-Fri)
 function isBusinessDay(date: Date): boolean {
@@ -14,7 +15,7 @@ function isBusinessDay(date: Date): boolean {
 function addBusinessDays(startDate: Date, businessDays: number): Date {
   const result = new Date(startDate);
   let daysAdded = 0;
-  
+
   while (daysAdded < businessDays) {
     result.setDate(result.getDate() + 1);
     if (isBusinessDay(result)) {
@@ -29,32 +30,34 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-type Stats = {
-  totalOpportunities: number;
-  prospectOpportunities: number;
-  activeOpportunities: number;
-  wonOpportunities: number;
-  totalAccounts: number;
-  totalContacts: number;
-  contactsDueToday: number;
-  contactsOverdue: number;
-  outreachThisWeek: number;
-  callsThisWeek: number;
-  emailsThisWeek: number;
-  currentStreak: number;
-  recentActivity: Array<{
-    contactName: string;
-    accountName: string;
-    product: string;
-    method: string;
-    date: string;
-    notes: string | null;
-  }>;
+type ActivityRecord = {
+  date: string;
+  contactName: string;
+  contactTitle: string;
+  method: string;
 };
+
+type Stats = {
+  contactsDueToday: number;
+  activityByPeriod: {
+    weekly: { calls: number; emails: number };
+    monthly: { calls: number; emails: number };
+    annual: { calls: number; emails: number };
+  };
+  recentActivity: ActivityRecord[];
+  weekActivity: ActivityRecord[];
+  monthActivity: ActivityRecord[];
+  quarterActivity: ActivityRecord[];
+};
+
+type PeriodKey = 'weekly' | 'monthly' | 'annual';
+type RecentViewKey = 'last5' | 'week' | 'month' | 'quarter';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>('weekly');
+  const [recentView, setRecentView] = useState<RecentViewKey>('last5');
 
   useEffect(() => {
     fetchStats();
@@ -65,17 +68,12 @@ export default function DashboardPage() {
     today.setHours(0, 0, 0, 0);
     const isBizDay = isBusinessDay(today);
 
-    // Get all opportunities with health systems
+    // Get all opportunities
     const { data: opportunities } = await supabase
       .from('opportunities')
-      .select('*, health_systems(*)');
-
-    // Get all health systems
-    const { data: accounts } = await supabase
-      .from('health_systems')
       .select('*');
 
-    // Get all contacts
+    // Get all contacts with their related data
     const { data: contacts } = await supabase
       .from('contacts')
       .select('*');
@@ -86,59 +84,32 @@ export default function DashboardPage() {
       .select('*')
       .order('contact_date', { ascending: false });
 
-    // Calculate dates
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-
     const oppsData = opportunities || [];
-    const accountsData = accounts || [];
     const contactsData = contacts || [];
     const logsData = logs || [];
 
-    // Count opportunities by status (treat missing status as 'prospect')
-    const prospectOpps = oppsData.filter((o: Opportunity) => !o.status || o.status === 'prospect');
-    const activeOpps = oppsData.filter((o: Opportunity) => o.status === 'active');
-    const wonOpps = oppsData.filter((o: Opportunity) => o.status === 'won');
-
-    // Build maps
-    const contactToOpp: Record<string, string> = {};
-    const contactToAccount: Record<string, string> = {};
-    const contactMap: Record<string, { name: string; accountName: string; product: string }> = {};
-    const oppsMap: Record<string, Opportunity & { health_systems: HealthSystem }> = {};
-
-    oppsData.forEach((o: Opportunity & { health_systems: HealthSystem }) => {
-      oppsMap[o.id] = o;
-    });
-
+    // Build contact map for lookups
+    const contactMap: Record<string, { name: string; role: string }> = {};
     contactsData.forEach((c: Contact) => {
-      if (c.opportunity_id) {
-        contactToOpp[c.id] = c.opportunity_id;
-        const opp = oppsMap[c.opportunity_id];
-        if (opp) {
-          contactMap[c.id] = {
-            name: c.name,
-            accountName: opp.health_systems?.name || 'Unknown',
-            product: opp.product,
-          };
-        }
-      }
-      contactToAccount[c.id] = c.health_system_id;
+      contactMap[c.id] = {
+        name: c.name,
+        role: c.role || '',
+      };
     });
 
     // Find last outreach for each contact
-    const lastOutreach: Record<string, { date: string; method: string }> = {};
+    const lastOutreach: Record<string, { date: string }> = {};
     logsData.forEach((log: OutreachLog) => {
       if (!lastOutreach[log.contact_id]) {
-        lastOutreach[log.contact_id] = {
-          date: log.contact_date,
-          method: log.contact_method,
-        };
+        lastOutreach[log.contact_id] = { date: log.contact_date };
       }
     });
 
-    // Calculate contacts due today and overdue (only from prospect opportunities)
-    const prospectOppIds = new Set(prospectOpps.map((o: Opportunity) => o.id));
+    // Calculate contacts due today (only from prospect opportunities)
+    const prospectOppIds = new Set(
+      oppsData.filter(o => !o.status || o.status === 'prospect').map(o => o.id)
+    );
+
     let contactsDueToday = 0;
     let contactsOverdue = 0;
 
@@ -153,7 +124,6 @@ export default function DashboardPage() {
         lastContactDate.setHours(0, 0, 0, 0);
         dueDate = addBusinessDays(lastContactDate, contact.cadence_days);
       } else {
-        // Never contacted - due today
         dueDate = today;
       }
 
@@ -164,67 +134,67 @@ export default function DashboardPage() {
       }
     });
 
-    // This week's logs
-    const thisWeekLogs = logsData.filter((log: OutreachLog) =>
+    // Calculate date boundaries
+    const startOfWeek = new Date(today);
+    startOfWeek.setDate(today.getDate() - today.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const ninetyDaysAgo = new Date(today);
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    const oneYearAgo = new Date(today);
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+    // Filter logs by period
+    const weeklyLogs = logsData.filter((log: OutreachLog) =>
       new Date(log.contact_date) >= startOfWeek
     );
+    const monthlyLogs = logsData.filter((log: OutreachLog) =>
+      new Date(log.contact_date) >= thirtyDaysAgo
+    );
+    const annualLogs = logsData.filter((log: OutreachLog) =>
+      new Date(log.contact_date) >= oneYearAgo
+    );
 
-    // Activity breakdown this week
-    const callsThisWeek = thisWeekLogs.filter((l: OutreachLog) => l.contact_method === 'call').length;
-    const emailsThisWeek = thisWeekLogs.filter((l: OutreachLog) => l.contact_method === 'email').length;
+    // Count by method for each period
+    const countByMethod = (logs: OutreachLog[]) => ({
+      calls: logs.filter(l => l.contact_method === 'call').length,
+      emails: logs.filter(l => l.contact_method === 'email').length,
+    });
 
-    // Calculate streak (consecutive business days with any outreach activity)
-    let streak = 0;
-    const checkDate = new Date(today);
-    checkDate.setHours(0, 0, 0, 0);
-
-    // If today is not a business day, start checking from the last business day
-    if (!isBizDay) {
-      while (!isBusinessDay(checkDate)) {
-        checkDate.setDate(checkDate.getDate() - 1);
-      }
-    }
-
-    while (true) {
-      const dateStr = formatDate(checkDate);
-      const hasOutreach = logsData.some((l: OutreachLog) => l.contact_date === dateStr);
-      
-      if (hasOutreach) {
-        streak++;
-        // Move to previous business day
-        checkDate.setDate(checkDate.getDate() - 1);
-        while (!isBusinessDay(checkDate)) {
-          checkDate.setDate(checkDate.getDate() - 1);
-        }
-      } else {
-        break;
-      }
-    }
-
-    // Recent activity (last 5)
-    const recentActivity = logsData.slice(0, 5).map((log: OutreachLog) => ({
-      contactName: contactMap[log.contact_id]?.name || 'Unknown',
-      accountName: contactMap[log.contact_id]?.accountName || 'Unknown',
-      product: contactMap[log.contact_id]?.product || '',
-      method: log.contact_method,
+    // Map logs to activity records
+    const mapToActivity = (log: OutreachLog): ActivityRecord => ({
       date: log.contact_date,
-      notes: log.notes,
-    }));
+      contactName: contactMap[log.contact_id]?.name || 'Unknown',
+      contactTitle: contactMap[log.contact_id]?.role || '',
+      method: log.contact_method,
+    });
+
+    // Filter for recent activity views
+    const weekActivityLogs = logsData.filter((log: OutreachLog) =>
+      new Date(log.contact_date) >= startOfWeek
+    );
+    const monthActivityLogs = logsData.filter((log: OutreachLog) =>
+      new Date(log.contact_date) >= thirtyDaysAgo
+    );
+    const quarterActivityLogs = logsData.filter((log: OutreachLog) =>
+      new Date(log.contact_date) >= ninetyDaysAgo
+    );
 
     setStats({
-      totalOpportunities: oppsData.length,
-      prospectOpportunities: prospectOpps.length,
-      activeOpportunities: activeOpps.length,
-      wonOpportunities: wonOpps.length,
-      totalAccounts: accountsData.length,
-      totalContacts: contactsData.length,
       contactsDueToday: isBizDay ? contactsDueToday + contactsOverdue : 0,
-      contactsOverdue,
-      outreachThisWeek: thisWeekLogs.length,
-      callsThisWeek,
-      emailsThisWeek,
-      currentStreak: streak,
-      recentActivity,
+      activityByPeriod: {
+        weekly: countByMethod(weeklyLogs),
+        monthly: countByMethod(monthlyLogs),
+        annual: countByMethod(annualLogs),
+      },
+      recentActivity: logsData.slice(0, 5).map(mapToActivity),
+      weekActivity: weekActivityLogs.map(mapToActivity),
+      monthActivity: monthActivityLogs.map(mapToActivity),
+      quarterActivity: quarterActivityLogs.map(mapToActivity),
     });
 
     setLoading(false);
@@ -240,10 +210,43 @@ export default function DashboardPage() {
 
   if (!stats) return null;
 
-  const methodIcons: Record<string, string> = {
-    call: '📞',
-    email: '✉️',
+  // Prepare chart data
+  const chartData = [
+    {
+      name: selectedPeriod === 'weekly' ? 'This Week' : selectedPeriod === 'monthly' ? 'Last 30 Days' : 'This Year',
+      Calls: stats.activityByPeriod[selectedPeriod].calls,
+      Emails: stats.activityByPeriod[selectedPeriod].emails,
+    },
+  ];
+
+  // Get current activity list based on view selection
+  const getActivityList = (): ActivityRecord[] => {
+    switch (recentView) {
+      case 'week':
+        return stats.weekActivity;
+      case 'month':
+        return stats.monthActivity;
+      case 'quarter':
+        return stats.quarterActivity;
+      default:
+        return stats.recentActivity;
+    }
   };
+
+  const activityList = getActivityList();
+
+  const periodButtons: { key: PeriodKey; label: string }[] = [
+    { key: 'weekly', label: 'Weekly' },
+    { key: 'monthly', label: 'Monthly' },
+    { key: 'annual', label: 'Annual' },
+  ];
+
+  const recentViewButtons: { key: RecentViewKey; label: string }[] = [
+    { key: 'last5', label: 'Last 5' },
+    { key: 'week', label: 'Last Week' },
+    { key: 'month', label: 'Last 30 Days' },
+    { key: 'quarter', label: 'Last 90 Days' },
+  ];
 
   return (
     <div className="min-h-screen p-4 sm:p-6 max-w-5xl mx-auto">
@@ -252,145 +255,134 @@ export default function DashboardPage() {
         <p className="text-gray-500 text-sm">Your outreach activity at a glance</p>
       </div>
 
-      {/* Top Stats Row */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-6">
-        <Link href="/todo" className="bg-white dark:bg-gray-800 rounded-xl p-3 sm:p-4 border shadow-sm hover:shadow-md active:shadow-sm transition-shadow">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Due Today</p>
-          <p className={`text-2xl sm:text-3xl font-bold mt-1 ${
-            stats.contactsDueToday === 0 ? 'text-green-600' : 'text-blue-600'
-          }`}>
-            {stats.contactsDueToday}
-          </p>
-          <p className="text-xs text-gray-400">
-            {stats.contactsOverdue > 0 && (
-              <span className="text-red-500">{stats.contactsOverdue} overdue</span>
-            )}
-            {stats.contactsOverdue === 0 && 'contacts to reach'}
-          </p>
-        </Link>
+      {/* Due Today Banner */}
+      <Link
+        href="/todo"
+        className={`block mb-6 rounded-xl p-6 border shadow-sm hover:shadow-md transition-shadow ${
+          stats.contactsDueToday === 0
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+            : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+        }`}
+      >
+        <p className={`text-2xl font-bold ${
+          stats.contactsDueToday === 0 ? 'text-green-700 dark:text-green-400' : 'text-blue-700 dark:text-blue-400'
+        }`}>
+          Due Today: {stats.contactsDueToday} {stats.contactsDueToday === 1 ? 'activity' : 'activities'}
+        </p>
+      </Link>
 
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-3 sm:p-4 border shadow-sm">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">This Week</p>
-          <p className="text-2xl sm:text-3xl font-bold mt-1">{stats.outreachThisWeek}</p>
-          <p className="text-xs text-gray-400">total outreach</p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-3 sm:p-4 border shadow-sm">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Streak</p>
-          <p className="text-2xl sm:text-3xl font-bold mt-1">{stats.currentStreak}</p>
-          <p className="text-xs text-gray-400">{stats.currentStreak === 1 ? 'day' : 'days'} in a row</p>
-        </div>
-
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-3 sm:p-4 border shadow-sm">
-          <p className="text-xs text-gray-500 uppercase tracking-wide">Prospects</p>
-          <p className="text-2xl sm:text-3xl font-bold mt-1">{stats.prospectOpportunities}</p>
-          <p className="text-xs text-gray-400">active opps</p>
-        </div>
-      </div>
-
-      {/* Activity Breakdown & Summary */}
-      <div className="grid md:grid-cols-2 gap-6 mb-6">
-        {/* Activity Breakdown */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border shadow-sm">
-          <h3 className="font-semibold mb-4">This Week&apos;s Activity</h3>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">✉️</span>
-                <span className="text-gray-600 dark:text-gray-300">Emails</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-blue-500 h-2 rounded-full"
-                    style={{ width: `${Math.min((stats.emailsThisWeek / Math.max(stats.outreachThisWeek, 1)) * 100, 100)}%` }}
-                  />
-                </div>
-                <span className="font-medium w-8 text-right">{stats.emailsThisWeek}</span>
-              </div>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">📞</span>
-                <span className="text-gray-600 dark:text-gray-300">Calls</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                  <div
-                    className="bg-green-500 h-2 rounded-full"
-                    style={{ width: `${Math.min((stats.callsThisWeek / Math.max(stats.outreachThisWeek, 1)) * 100, 100)}%` }}
-                  />
-                </div>
-                <span className="font-medium w-8 text-right">{stats.callsThisWeek}</span>
-              </div>
-            </div>
+      {/* Activity Tracker */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border shadow-sm mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
+          <h3 className="font-semibold text-lg">Activity Tracker</h3>
+          <div className="flex gap-1">
+            {periodButtons.map((btn) => (
+              <button
+                key={btn.key}
+                onClick={() => setSelectedPeriod(btn.key)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition ${
+                  selectedPeriod === btn.key
+                    ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                {btn.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Summary */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border shadow-sm">
-          <h3 className="font-semibold mb-4">Pipeline Summary</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-300">Total Opportunities</span>
-              <span className="font-medium">{stats.totalOpportunities}</span>
-            </div>
-            <div className="flex justify-between pl-4 text-sm">
-              <span className="text-yellow-600 dark:text-yellow-400">Prospect</span>
-              <span className="font-medium">{stats.prospectOpportunities}</span>
-            </div>
-            <div className="flex justify-between pl-4 text-sm">
-              <span className="text-blue-600 dark:text-blue-400">Active</span>
-              <span className="font-medium">{stats.activeOpportunities}</span>
-            </div>
-            <div className="flex justify-between pl-4 text-sm">
-              <span className="text-green-600 dark:text-green-400">Won</span>
-              <span className="font-medium">{stats.wonOpportunities}</span>
-            </div>
-            <div className="border-t pt-3 mt-3">
-              <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-300">Accounts</span>
-                <span className="font-medium">{stats.totalAccounts}</span>
-              </div>
-              <div className="flex justify-between mt-1">
-                <span className="text-gray-600 dark:text-gray-300">Contacts</span>
-                <span className="font-medium">{stats.totalContacts}</span>
-              </div>
-            </div>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} layout="vertical">
+              <XAxis type="number" />
+              <YAxis type="category" dataKey="name" width={100} />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="Calls" fill="#22c55e" radius={[0, 4, 4, 0]} />
+              <Bar dataKey="Emails" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="mt-4 flex justify-center gap-6 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-green-500"></div>
+            <span className="text-gray-600 dark:text-gray-300">
+              Calls: {stats.activityByPeriod[selectedPeriod].calls}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-blue-500"></div>
+            <span className="text-gray-600 dark:text-gray-300">
+              Emails: {stats.activityByPeriod[selectedPeriod].emails}
+            </span>
           </div>
         </div>
       </div>
 
       {/* Recent Activity */}
       <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border shadow-sm">
-        <h3 className="font-semibold mb-4">Recent Activity</h3>
-        {stats.recentActivity.length === 0 ? (
-          <p className="text-gray-500 text-sm">No recent activity. Start reaching out!</p>
-        ) : (
-          <div className="space-y-3">
-            {stats.recentActivity.map((activity, i) => (
-              <div key={i} className="flex items-start gap-3 pb-3 border-b last:border-0 last:pb-0">
-                <span className="text-xl">{methodIcons[activity.method]}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm">
-                    <span className="font-medium">{activity.contactName}</span>
-                    <span className="text-gray-500"> at {activity.accountName}</span>
-                    {activity.product && (
-                      <span className="ml-1 text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                        {activity.product}
-                      </span>
-                    )}
-                  </p>
-                  {activity.notes && (
-                    <p className="text-xs text-gray-400 truncate">{activity.notes}</p>
-                  )}
-                </div>
-                <span className="text-xs text-gray-400 whitespace-nowrap">
-                  {new Date(activity.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </span>
-              </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
+          <h3 className="font-semibold text-lg">Recent Activity</h3>
+          <div className="flex flex-wrap gap-1">
+            {recentViewButtons.map((btn) => (
+              <button
+                key={btn.key}
+                onClick={() => setRecentView(btn.key)}
+                className={`px-3 py-1.5 text-sm rounded-lg transition ${
+                  recentView === btn.key
+                    ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
+                }`}
+              >
+                {btn.label}
+              </button>
             ))}
           </div>
+        </div>
+
+        {activityList.length === 0 ? (
+          <p className="text-gray-500 text-sm py-4 text-center">No activity found for this period.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b dark:border-gray-700">
+                  <th className="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">Date</th>
+                  <th className="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">Name</th>
+                  <th className="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">Title</th>
+                  <th className="text-left py-2 px-2 font-medium text-gray-500 dark:text-gray-400">Method</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activityList.map((activity, i) => (
+                  <tr key={i} className="border-b last:border-0 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td className="py-2 px-2 whitespace-nowrap">
+                      {new Date(activity.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </td>
+                    <td className="py-2 px-2 font-medium">{activity.contactName}</td>
+                    <td className="py-2 px-2 text-gray-500 dark:text-gray-400">{activity.contactTitle || '-'}</td>
+                    <td className="py-2 px-2">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                        activity.method === 'call'
+                          ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                          : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                      }`}>
+                        {activity.method === 'call' ? '📞' : '✉️'} {activity.method}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {activityList.length > 10 && (
+          <p className="text-xs text-gray-400 mt-3 text-center">
+            Showing {activityList.length} activities
+          </p>
         )}
       </div>
     </div>
