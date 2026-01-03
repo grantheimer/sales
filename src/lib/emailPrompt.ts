@@ -52,15 +52,18 @@ ${detailedProductInfo}
 Here are internal notes about this contact and account. Use them only as context and do not repeat them verbatim:
 ${internalNotes}
 
-First, generate a concise, professional subject line.
+First, generate a concise, professional subject line that does not exceed 50 characters.
 Then generate the email body.
 
 Write the body in 4–6 sentences, no more and no fewer.
 Within those sentences, briefly explain what ${product} does and why it matters for someone in this role at a health system.
-The final sentence must ask for a 30-minute introductory meeting and suggest a couple of specific time options next week.
+The final sentence should offer a 30-minute introductory call, but do not suggest specific times or dates.
+End the email with exactly "Thank you." as the closing line (no signature block needed).
 
 Format your response like this exactly:
 
 Subject: <subject line>
-<email body here>`;
+<email body here>
+
+Thank you.`;
 }
