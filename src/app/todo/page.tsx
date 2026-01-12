@@ -472,32 +472,8 @@ export default function TodoPage() {
                   href={`/opportunities/${contact.opportunity.id}`}
                   className="text-xs sm:text-sm text-blue-400 hover:underline shrink-0"
                 >
-                  View →
+                  View Opportunity →
                 </Link>
-              </div>
-
-              {/* Toggle Buttons */}
-              <div className="flex gap-2 mb-3">
-                <button
-                  onClick={() => toggleSelection(contact.id, 'emailed')}
-                  className={`flex-1 sm:flex-none px-4 py-3 sm:py-2.5 text-sm sm:text-base font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
-                    selection.emailed
-                      ? 'bg-green-600 text-white'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  }`}
-                >
-                  {selection.emailed && <span>✓</span>} Emailed
-                </button>
-                <button
-                  onClick={() => toggleSelection(contact.id, 'called')}
-                  className={`flex-1 sm:flex-none px-4 py-3 sm:py-2.5 text-sm sm:text-base font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
-                    selection.called
-                      ? 'bg-green-600 text-white'
-                      : 'bg-orange-500 text-white hover:bg-orange-600'
-                  }`}
-                >
-                  {selection.called && <span>✓</span>} Called
-                </button>
               </div>
 
               {/* Notes */}
@@ -509,8 +485,35 @@ export default function TodoPage() {
                 className="w-full px-3 py-2.5 sm:py-2 text-sm sm:text-base border border-gray-600 rounded-lg bg-gray-700 text-white placeholder-gray-400 mb-3"
               />
 
+              {/* Email Address */}
+              <div className="flex items-center gap-2 mb-3">
+                {contact.email ? (
+                  <>
+                    <span className="text-sm text-gray-300">{contact.email}</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(contact.email!);
+                        } catch (err) {
+                          console.error('Failed to copy email', err);
+                        }
+                      }}
+                      className="text-gray-400 hover:text-white transition"
+                      title="Copy email"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-500 italic">No email</span>
+                )}
+              </div>
+
               {/* LLM prompt for drafting outreach email */}
-              <div className="mt-1 mb-3">
+              <div className="mb-3">
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -560,6 +563,30 @@ export default function TodoPage() {
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Toggle Buttons */}
+              <div className="flex gap-2 mb-3">
+                <button
+                  onClick={() => toggleSelection(contact.id, 'emailed')}
+                  className={`flex-1 sm:flex-none px-4 py-3 sm:py-2.5 text-sm sm:text-base font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    selection.emailed
+                      ? 'bg-green-600 text-white'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  }`}
+                >
+                  {selection.emailed && <span>✓</span>} Emailed
+                </button>
+                <button
+                  onClick={() => toggleSelection(contact.id, 'called')}
+                  className={`flex-1 sm:flex-none px-4 py-3 sm:py-2.5 text-sm sm:text-base font-medium rounded-lg transition flex items-center justify-center gap-1.5 ${
+                    selection.called
+                      ? 'bg-green-600 text-white'
+                      : 'bg-orange-500 text-white hover:bg-orange-600'
+                  }`}
+                >
+                  {selection.called && <span>✓</span>} Called
+                </button>
               </div>
 
               {/* Submit Button */}
