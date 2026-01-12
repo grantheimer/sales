@@ -437,10 +437,9 @@ export default function TodoPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => openHistory(contact.id, contact.name)}
-                      className="font-semibold text-base sm:text-lg text-white hover:underline text-left inline-flex items-center gap-1.5"
+                      className="font-semibold text-base sm:text-lg text-white hover:underline text-left"
                     >
                       {contact.name}
-                      <span className="text-gray-400 text-sm">↗</span>
                     </button>
                     {contact.is_rollover && (
                       <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300 font-medium">
