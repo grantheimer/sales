@@ -55,16 +55,23 @@ ${internalNotes}
 First, generate a concise, professional subject line that does not exceed 50 characters.
 Then generate the email body.
 
-Write the body in 4–6 sentences, no more and no fewer.
-The first sentence of the body should be a brief, polite opener such as "I hope this finds you well," or a closely related variant appropriate for a first-time outreach.
-Within those sentences, briefly explain what ${product} does and why it matters for someone in this role at a health system.
+The greeting must be: "Hi [first name]," OR "Hi Dr. [last name]," if the contact appears to be a physician (MD, DO, or a clinical title like Chief Medical Officer). Use just the first name for non-physicians.
+
+The first line after the greeting must be exactly: "Hope your year has been off to a great start."
+
+Then write a 4–5 sentence body. Vary the sentence lengths so they flow in an incredibly smooth, natural cadence—mix shorter punchy sentences with longer ones. Within those sentences, briefly explain what ${product} does and why it matters for someone in this role at a health system.
 The final sentence of the body must be a clear call-to-action question inviting them to a 30-minute introductory call (for example, asking if you could meet sometime in the next two weeks for a 30-minute intro), and it must be phrased as a question.
 End the email with exactly "Thank you." as the closing line (no signature block needed).
 
 Format your response like this exactly:
 
 Subject: <subject line>
-<email body here>
+
+Hi [name],
+
+Hope your year has been off to a great start.
+
+<body here>
 
 Thank you.`;
 }
