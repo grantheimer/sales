@@ -40,9 +40,7 @@ export function buildLlmPromptForContact(contact: EmailPromptContact): string {
   const roleClause = contact.role ? `, ${contact.role}` : '';
   const internalNotes = (contact.notes?.trim() || 'No additional internal notes.').slice(0, 500);
 
-  return `You are an expert B2B sales email writer.
-
-Generate a concise, friendly, relatively formal outreach email.
+  return `You are an expert B2B sales writer with years of successful enterprise sales experience. You also have a decade of experience in the clinical coding space, giving you a deep understanding of the issues which IMO Health's solutions are able to solve. Your task is to generate a concise, friendly, and relatively formal email.
 The email is to ${contact.name}${roleClause} at ${contact.health_system.name}.
 I want to introduce them for the first time to our ${product} solution.
 
