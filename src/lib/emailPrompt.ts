@@ -57,7 +57,9 @@ The greeting must be: "Hi [first name]," OR "Hi Dr. [last name]," if the contact
 
 The first line after the greeting must be exactly: "Hope your year has been off to a great start."
 
-Then write a 4–5 sentence body. Vary the sentence lengths so they flow in an incredibly smooth, natural cadence—mix shorter punchy sentences with longer ones. Within those sentences, briefly explain what ${product} does and why it matters for someone in this role at a health system.
+Then write a 4–5 sentence body. Vary the sentence lengths so they flow in an incredibly smooth, natural cadence, mixing shorter punchy sentences with longer ones. Within those sentences, briefly explain what ${product} does and why it matters for someone in this role at a health system.
+No sentence may exceed 20 words.
+Do not use em-dashes anywhere in the email.
 The final sentence of the body must be a clear call-to-action question inviting them to a 30-minute introductory call (for example, asking if you could meet sometime in the next two weeks for a 30-minute intro), and it must be phrased as a question.
 End the email with exactly "Thank you." as the closing line (no signature block needed).
 
