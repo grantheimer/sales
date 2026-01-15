@@ -18,8 +18,8 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<ContactWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Sorting state
-  const [sortColumn, setSortColumn] = useState<SortColumn>(null);
+  // Sorting state - default to Name A-Z
+  const [sortColumn, setSortColumn] = useState<SortColumn>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   // Bulk selection state
@@ -214,17 +214,6 @@ export default function ContactsPage() {
     return sorted;
   };
 
-  const truncateNotes = (notes: string | null, maxLength: number = 30): string => {
-    if (!notes) return '';
-    if (notes.length <= maxLength) return notes;
-    return notes.substring(0, maxLength) + '...';
-  };
-
-  const formatCadence = (opportunities: OpportunityWithCadence[]): string => {
-    if (opportunities.length === 0) return '—';
-    return opportunities.map((opp) => `${opp.product}: ${opp.cadence_days}d`).join(', ');
-  };
-
   const formatOpportunities = (opportunities: OpportunityWithCadence[]): string => {
     if (opportunities.length === 0) return '—';
     return opportunities.map((opp) => opp.product).join(', ');
@@ -338,12 +327,6 @@ export default function ContactsPage() {
                 </th>
                 <SortableHeader column="email" label="Email" />
                 <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Notes
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Cadence
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
@@ -359,7 +342,7 @@ export default function ContactsPage() {
                     <>
                       {/* Account header row */}
                       <tr key={`header-${accountId}`} className="bg-gray-100 dark:bg-gray-750">
-                        <td colSpan={9} className="px-3 py-2">
+                        <td colSpan={7} className="px-3 py-2">
                           <span className="font-semibold text-sm">{accountName}</span>
                           <span className="text-xs text-gray-500 ml-2">
                             ({accountContacts.length} contact{accountContacts.length !== 1 ? 's' : ''})
@@ -375,9 +358,7 @@ export default function ContactsPage() {
                           onToggleSelect={() => toggleSelect(contact.id)}
                           onEdit={() => setEditingContact(contact)}
                           onDelete={() => handleDelete(contact.id, contact.name)}
-                          truncateNotes={truncateNotes}
                           formatOpportunities={formatOpportunities}
-                          formatCadence={formatCadence}
                         />
                       ))}
                     </>
@@ -393,9 +374,7 @@ export default function ContactsPage() {
                     onToggleSelect={() => toggleSelect(contact.id)}
                     onEdit={() => setEditingContact(contact)}
                     onDelete={() => handleDelete(contact.id, contact.name)}
-                    truncateNotes={truncateNotes}
                     formatOpportunities={formatOpportunities}
-                    formatCadence={formatCadence}
                     showAccount
                   />
                 ))
@@ -424,9 +403,7 @@ function ContactRow({
   onToggleSelect,
   onEdit,
   onDelete,
-  truncateNotes,
   formatOpportunities,
-  formatCadence,
   showAccount = false,
 }: {
   contact: ContactWithDetails;
@@ -434,9 +411,7 @@ function ContactRow({
   onToggleSelect: () => void;
   onEdit: () => void;
   onDelete: () => void;
-  truncateNotes: (notes: string | null, maxLength?: number) => string;
   formatOpportunities: (opportunities: OpportunityWithCadence[]) => string;
-  formatCadence: (opportunities: OpportunityWithCadence[]) => string;
   showAccount?: boolean;
 }) {
   return (
@@ -465,15 +440,6 @@ function ContactRow({
       </td>
       <td className="px-3 py-2 text-sm text-gray-600 dark:text-gray-400">
         {contact.email || '—'}
-      </td>
-      <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
-        <span title={contact.notes || ''}>
-          {truncateNotes(contact.notes)}
-          {!contact.notes && '—'}
-        </span>
-      </td>
-      <td className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-        {formatCadence(contact.opportunities)}
       </td>
       <td className="px-3 py-2">
         <div className="flex gap-1">
