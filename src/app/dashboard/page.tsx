@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { supabase, Contact, OutreachLog, ContactOpportunity, Opportunity } from '@/lib/supabase';
 import Link from 'next/link';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // Helper: Check if a date is a business day (Mon-Fri)
 function isBusinessDay(date: Date): boolean {
@@ -30,6 +30,25 @@ function formatDate(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
+// Helper: Get Monday of a given week
+function getMonday(date: Date): Date {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Helper: Get week number of year (ISO week)
+function getWeekNumber(date: Date): number {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
 type ActivityRecord = {
   date: string;
   contactName: string;
@@ -37,27 +56,33 @@ type ActivityRecord = {
   method: string;
 };
 
+type ChartDataPoint = {
+  name: string;
+  touches: number;
+  fullLabel?: string;
+};
+
 type Stats = {
   contactsDueToday: number;
-  activityByPeriod: {
-    weekly: { calls: number; emails: number };
-    monthly: { calls: number; emails: number };
-    annual: { calls: number; emails: number };
-  };
+  dailyData: ChartDataPoint[];
+  weeklyData: ChartDataPoint[];
+  monthlyData: ChartDataPoint[];
+  yearTotal: number;
   recentActivity: ActivityRecord[];
   weekActivity: ActivityRecord[];
   monthActivity: ActivityRecord[];
   quarterActivity: ActivityRecord[];
 };
 
-type PeriodKey = 'weekly' | 'monthly' | 'annual';
+type ViewKey = 'daily' | 'weekly' | 'monthly';
 type RecentViewKey = 'last5' | 'week' | 'month' | 'quarter';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>('weekly');
+  const [selectedView, setSelectedView] = useState<ViewKey>('daily');
   const [recentView, setRecentView] = useState<RecentViewKey>('last5');
+  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
     fetchStats();
@@ -67,6 +92,7 @@ export default function DashboardPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const isBizDay = isBusinessDay(today);
+    const thisYear = today.getFullYear();
 
     // Get all opportunities
     const { data: opportunities } = await supabase
@@ -104,7 +130,6 @@ export default function DashboardPage() {
     });
 
     // Find last outreach for each contact-opportunity pair
-    // Key: `${contact_id}-${opportunity_id}`
     const lastOutreach: Record<string, { date: string }> = {};
     logsData.forEach((log: OutreachLog) => {
       const key = `${log.contact_id}-${log.opportunity_id}`;
@@ -121,7 +146,6 @@ export default function DashboardPage() {
     let contactsDueToday = 0;
     let contactsOverdue = 0;
 
-    // Use assignments to calculate due-today (each assignment is a potential to-do item)
     assignmentsData.forEach((assignment: ContactOpportunity) => {
       if (!prospectOppIds.has(assignment.opportunity_id)) return;
 
@@ -144,36 +168,68 @@ export default function DashboardPage() {
       }
     });
 
-    // Calculate date boundaries
-    const startOfWeek = new Date(today);
-    startOfWeek.setDate(today.getDate() - today.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
+    // Filter logs for this year only (for all chart views)
+    const yearLogs = logsData.filter((log: OutreachLog) => {
+      const logDate = new Date(log.contact_date);
+      return logDate.getFullYear() === thisYear;
+    });
 
+    // --- DAILY DATA (Mon-Fri of current week) ---
+    const monday = getMonday(today);
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const dailyData: ChartDataPoint[] = dayNames.map((name, i) => {
+      const dayDate = new Date(monday);
+      dayDate.setDate(monday.getDate() + i);
+      const dateStr = formatDate(dayDate);
+      const fullLabel = dayDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+      const touches = yearLogs.filter((log: OutreachLog) => log.contact_date === dateStr).length;
+      return { name, touches, fullLabel };
+    });
+
+    // --- WEEKLY DATA (52 weeks) ---
+    const weeklyData: ChartDataPoint[] = [];
+    for (let week = 1; week <= 52; week++) {
+      // Find start of this week (Monday)
+      const jan1 = new Date(thisYear, 0, 1);
+      const daysToFirstMonday = (8 - jan1.getDay()) % 7 || 7;
+      const firstMonday = new Date(thisYear, 0, 1 + daysToFirstMonday);
+      const weekStart = new Date(firstMonday);
+      weekStart.setDate(firstMonday.getDate() + (week - 1) * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+
+      const weekStartStr = weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const weekEndStr = weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const fullLabel = `Week ${week}: ${weekStartStr} - ${weekEndStr}`;
+
+      const touches = yearLogs.filter((log: OutreachLog) => {
+        const logDate = new Date(log.contact_date);
+        return getWeekNumber(logDate) === week && logDate.getFullYear() === thisYear;
+      }).length;
+
+      weeklyData.push({ name: '', touches, fullLabel });
+    }
+
+    // --- MONTHLY DATA (12 months) ---
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyData: ChartDataPoint[] = monthNames.map((name, i) => {
+      const fullLabel = new Date(thisYear, i, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const touches = yearLogs.filter((log: OutreachLog) => {
+        const logDate = new Date(log.contact_date);
+        return logDate.getMonth() === i && logDate.getFullYear() === thisYear;
+      }).length;
+      return { name, touches, fullLabel };
+    });
+
+    // Year total
+    const yearTotal = yearLogs.length;
+
+    // Calculate date boundaries for recent activity
+    const startOfWeek = getMonday(today);
     const thirtyDaysAgo = new Date(today);
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
     const ninetyDaysAgo = new Date(today);
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-
-    const oneYearAgo = new Date(today);
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-
-    // Filter logs by period
-    const weeklyLogs = logsData.filter((log: OutreachLog) =>
-      new Date(log.contact_date) >= startOfWeek
-    );
-    const monthlyLogs = logsData.filter((log: OutreachLog) =>
-      new Date(log.contact_date) >= thirtyDaysAgo
-    );
-    const annualLogs = logsData.filter((log: OutreachLog) =>
-      new Date(log.contact_date) >= oneYearAgo
-    );
-
-    // Count by method for each period
-    const countByMethod = (logs: OutreachLog[]) => ({
-      calls: logs.filter(l => l.contact_method === 'call').length,
-      emails: logs.filter(l => l.contact_method === 'email').length,
-    });
 
     // Map logs to activity records
     const mapToActivity = (log: OutreachLog): ActivityRecord => ({
@@ -183,7 +239,6 @@ export default function DashboardPage() {
       method: log.contact_method,
     });
 
-    // Filter for recent activity views
     const weekActivityLogs = logsData.filter((log: OutreachLog) =>
       new Date(log.contact_date) >= startOfWeek
     );
@@ -196,11 +251,10 @@ export default function DashboardPage() {
 
     setStats({
       contactsDueToday: isBizDay ? contactsDueToday + contactsOverdue : 0,
-      activityByPeriod: {
-        weekly: countByMethod(weeklyLogs),
-        monthly: countByMethod(monthlyLogs),
-        annual: countByMethod(annualLogs),
-      },
+      dailyData,
+      weeklyData,
+      monthlyData,
+      yearTotal,
       recentActivity: logsData.slice(0, 5).map(mapToActivity),
       weekActivity: weekActivityLogs.map(mapToActivity),
       monthActivity: monthActivityLogs.map(mapToActivity),
@@ -220,14 +274,21 @@ export default function DashboardPage() {
 
   if (!stats) return null;
 
-  // Prepare chart data
-  const chartData = [
-    {
-      name: selectedPeriod === 'weekly' ? 'This Week' : selectedPeriod === 'monthly' ? 'Last 30 Days' : 'This Year',
-      Calls: stats.activityByPeriod[selectedPeriod].calls,
-      Emails: stats.activityByPeriod[selectedPeriod].emails,
-    },
-  ];
+  // Get chart data based on selected view
+  const getChartData = (): ChartDataPoint[] => {
+    switch (selectedView) {
+      case 'daily':
+        return stats.dailyData;
+      case 'weekly':
+        return stats.weeklyData;
+      case 'monthly':
+        return stats.monthlyData;
+      default:
+        return stats.dailyData;
+    }
+  };
+
+  const chartData = getChartData();
 
   // Get current activity list based on view selection
   const getActivityList = (): ActivityRecord[] => {
@@ -245,11 +306,25 @@ export default function DashboardPage() {
 
   const activityList = getActivityList();
 
-  const periodButtons: { key: PeriodKey; label: string }[] = [
+  const viewButtons: { key: ViewKey; label: string }[] = [
+    { key: 'daily', label: 'Daily' },
     { key: 'weekly', label: 'Weekly' },
     { key: 'monthly', label: 'Monthly' },
-    { key: 'annual', label: 'Annual' },
   ];
+
+  // Custom tooltip for the chart
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: ChartDataPoint }> }) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 shadow-lg">
+          <p className="text-sm font-medium text-gray-900 dark:text-white">{data.fullLabel}</p>
+          <p className="text-sm text-blue-600 dark:text-blue-400">{data.touches} {data.touches === 1 ? 'touch' : 'touches'}</p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   const recentViewButtons: { key: RecentViewKey; label: string }[] = [
     { key: 'last5', label: 'Last 5' },
@@ -286,12 +361,12 @@ export default function DashboardPage() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 gap-3">
           <h3 className="font-semibold text-lg">Activity Tracker</h3>
           <div className="flex gap-1">
-            {periodButtons.map((btn) => (
+            {viewButtons.map((btn) => (
               <button
                 key={btn.key}
-                onClick={() => setSelectedPeriod(btn.key)}
+                onClick={() => setSelectedView(btn.key)}
                 className={`px-3 py-1.5 text-sm rounded-lg transition ${
-                  selectedPeriod === btn.key
+                  selectedView === btn.key
                     ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
                 }`}
@@ -302,32 +377,37 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} layout="vertical">
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="name" width={100} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="Calls" fill="#22c55e" radius={[0, 4, 4, 0]} />
-              <Bar dataKey="Emails" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className={`h-64 ${selectedView === 'weekly' ? 'overflow-x-auto' : ''}`}>
+          <div style={{ width: selectedView === 'weekly' ? '1200px' : '100%', height: '100%' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <XAxis
+                  dataKey="name"
+                  tick={selectedView === 'weekly' ? false : { fontSize: 12 }}
+                  axisLine={{ stroke: '#e5e7eb' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 12 }}
+                />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }} />
+                <Bar dataKey="touches" radius={[4, 4, 0, 0]}>
+                  {chartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill="#3b82f6" />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
-        <div className="mt-4 flex justify-center gap-6 text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-green-500"></div>
-            <span className="text-gray-600 dark:text-gray-300">
-              Calls: {stats.activityByPeriod[selectedPeriod].calls}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded bg-blue-500"></div>
-            <span className="text-gray-600 dark:text-gray-300">
-              Emails: {stats.activityByPeriod[selectedPeriod].emails}
-            </span>
-          </div>
+        <div className="mt-4 text-center">
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+            {currentYear} touches: {stats.yearTotal}
+          </span>
         </div>
       </div>
 
